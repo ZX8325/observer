@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>观测者</title>
+
+  <!-- 样式可以内联，也可以外置成 .css 文件。这里选外置，方便改。 -->
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<!-- body 上的 class 决定当前是哪种模式（见 style.css）。
+     先写死 mode-setup，免得页面加载瞬间两组控件同时闪一下。 -->
+<body class="mode-setup">
+
+<!-- ══════════════════════════════════════════════════════════════
+     星空背景画布
+     ⚠️ 它必须是 .app 的**兄弟节点**，不能放进 .app 里面。
+
+     为什么？画布是 position:fixed + z-index:0，属于「定位元素」。
+     CSS 的绘制顺序规定：**定位元素永远画在普通流元素之上**。
+     如果它待在 .app 里，就和信息栏、按钮处在同一层，
+     哪怕 z-index 是 0，也会把「非定位」的信息栏和按钮盖住。
+     （.app 自己的 z-index 救不了 —— 那是「对外」的层级，
+       管不了它内部谁盖谁。）
+
+     挪到外面之后，在 body 这一层里：
+       画布 z-index 0  → 先画，在下面
+       .app z-index 1  → 后画，浮在上面
+     界面才能稳稳地浮在星空之上。
+     ══════════════════════════════════════════════════════════════ -->
+<canvas id="world"></canvas>
+
+<div class="app">
+
+  <!-- ── 顶部：阶段提示 ──
+       ⚠️ 2026-09-15：原来这里有一行 `<h1 class="title">沙盒创世模拟器</h1>`，
+          用户要求去掉 —— 「正式上线不叫这个名字」。
+          **整块删掉了**，不是藏起来：
+            · HTML 里的 h1
+            · style.css 里的 `.title` 规则（不留死 CSS）
+          `.topbar` 这一层留着 —— 它是 toast 的容器，而且
+          `style.css` 那份「重新打开指针事件」的名单里有它（见 _wiring_test.js）。
+          ⚠️ 省下来的竖向空间会自动流到 `.stage`（它是 flex:1）。 -->
+  <header class="topbar">
+    <!-- ── 观测编号 + 状态点（2026-09-15 加）──
+         ★ 顶上原来是空的（标题删掉之后）。这一行把「观测站」的调性
+           直接落到界面上：左边一个状态点，右边一串编号。
+
+         ⚠️ 状态点是**有意义的**，不是装饰：
+              呼吸 = 世界正在演化      静止变暗 = 暂停 / 已结束
+            开关在 app.js 的 syncObsBar()，和 `world.running` 同一个源。
+
+         ⚠️ 编号从**种子**推出来（OBS-XXXX），同一颗世界永远是同一个号 ——
+            和「同种子 = 同世界」是同一条原则。 -->
+    <div class="obs-bar">
+      <span class="obs-dot" id="obs-dot"></span>
+      <span class="obs-code" id="obs-code"></span>
+      <!-- ★ 2026-09-16：世界名从底部信息栏**挪上来的**（用户拍板）。
+
+           ⚠️ 为什么动的是 HTML 而不是用 CSS 挪：
+             它原来在 <section class="info"> 里 —— 和这一行**不是一个父级**。
+             CSS 没法把元素搬进另一个容器；用绝对定位硬凹能骗过眼睛，
+             但元素会**脱出顶栏的 flex 流**，屏宽一变位置就飘。
+
+           ⚠️ `#info-name` 这个 id 一个字没动 → **app.js 一行都不用改**。
+           ⚠️ 设置模式下它是空的，靠 `body.mode-setup .info-name:empty`
+             整块收掉（连着左边那个「·」一起消失 —— 见 style.css）。 -->
+      <div class="info-name" id="info-name"></div>
+    </div>
+    <div class="toast" id="toast"></div>
+  </header>
+
+  <!-- ── 中间：世界所在的那块区域 ──
+       这个 main 是**空的**，只负责"占住中间那块地方"。
+       它在页面上的位置和大小，就是 JS 用来决定
+       「世界该画在哪、能画多大」的依据。 -->
+  <main class="stage" id="stage"></main>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       编年史 —— 文明阶段的主角
+
+       世界走到文明之后，这块开始**逐条写出一份历史**：
+       这个种族做过什么、遇到过什么、你怎么选的、最后怎么了。
+
+       ⚠️ 它放在 .app **里面**（不是像结局面板那样的整屏浮层）——
+          因为星球要留在上面看得见。玩家是一边看着那颗球，
+          一边读它的历史。
+
+       ⚠️ .app 上有 pointer-events: none，所以这一块必须加进
+          style.css 那份"重新打开指针事件"的名单里，否则滚不动。
+          （见 style.css 的 .topbar, .panel, ... 那一行）
+
+       ⚠️ 平时是 hidden 的（靠 JS 切换），只有文明阶段才出现。
+          用 hidden 属性而不是 class —— [hidden] 有 !important 兜底。
+
+       每一行的内容由 app.js 按 world.evo.civ.rows 填进来，这里只留空壳。
+       ══════════════════════════════════════════════════════════════ -->
+  <section class="chronicle" id="chronicle" hidden>
+    <div class="chronicle-head">
+      <span class="chronicle-name" id="chron-name"></span>
+      <span class="chronicle-era"  id="chron-era"></span>
+    </div>
+    <div class="chronicle-body" id="chron-body"></div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       界面分两种模式，靠 body 上的 class 切换（见 style.css）：
+
+         设置模式 mode-setup  ——  调参数，然后点【演化】
+         观察模式 mode-watch  ——  滑杆锁死，专心看世界变化
+
+       .setup-only 的东西只在设置模式显示，.watch-only 反之。
+       ══════════════════════════════════════════════════════════════ -->
+
+  <!-- ── 【设置模式】本源读数条（**不是滑杆，拖不动**）──
+       这四行说的是这颗星球开出来是什么命：多热、多少水、多厚的大气、多少陆地。
+
+       ⚠️⚠️ 2026-09-17 大改：这里**原来放的是四根 `<input type="range">`** ——
+          它们长得和能拖的滑杆一模一样（蓝填充条 + 白色小方块）。
+          审核员伸手去拖，拖不动，判了个「小工具功能缺陷」。
+
+       ⚠️ 改法**不是**把它藏起来，是**让它长得就不像能拖的**：
+          换成一条纯图形的读数条，**去掉那个白色小方块**。
+          「这东西能拖」全靠小方块在暗示 —— 没有小方块 = 一条读数，
+          天经地义不能拖。数值本身照旧一眼看得出。
+
+       ⚠️ id 从 `sl-*`（slider）改成 `bar-*` —— 它已经不是滑杆了，
+          名字留着会骗下一个读代码的人。
+
+       ⚠️ **不要再换回 `<input>`**（哪怕加了 `disabled`）——
+          那还是在屏幕上摆一个"控件"，和"这是读数"是两回事。
+          `_wiring_test.js` 有断言盯着这一节里不许出现 `<input>`。
+
+       ⚠️ 为什么本源不能调，见 app.js 里「把世界还给世界」那一大段。 -->
+  <section class="panel setup-only" id="essence">
+    <div class="row">
+      <span class="row-name">能量浓度</span>
+      <span class="row-bar" id="bar-energy"></span>
+      <span class="row-val" id="val-energy">--</span>
+    </div>
+    <div class="row">
+      <span class="row-name">水之本源</span>
+      <span class="row-bar" id="bar-water"></span>
+      <span class="row-val" id="val-water">--</span>
+    </div>
+    <div class="row">
+      <span class="row-name">大气密度</span>
+      <span class="row-bar" id="bar-atmo"></span>
+      <span class="row-val" id="val-atmo">--</span>
+    </div>
+    <div class="row">
+      <span class="row-name">大地之基</span>
+      <span class="row-bar" id="bar-land"></span>
+      <span class="row-val" id="val-land">--</span>
+    </div>
+  </section>
+
+  <!-- ── 【观察模式】本源数值（只读）──
+       ⚠️ 本源那一节整个藏起来（改不了了），但数值**留着**。
+         （⚠️ 2026-09-17 改词：这里原来写"滑杆"——**滑杆早就不存在了**，
+           2026-09-17 换成了读数条，见决策 #125。）
+         因为看着"能量一格一格往下掉、大气一点点涨上来"
+         本身就是观察的一部分 —— 那是世界在变化的证据。
+         内容由 app.js 按 WorldGen.ESSENCE_KEYS 生成。 -->
+  <section class="panel watch-only">
+    <div class="readout" id="readout"></div>
+  </section>
+
+  <!-- ── 演化阶段指示条（两种模式都显示）──
+       六段横条，由 app.js 按 Evolution.STAGES 生成，
+       已过的点亮、当前的高亮呼吸、未来的灰暗。 -->
+  <section class="stages" id="stages"></section>
+
+  <!-- ── 【观察模式】基础元素栏 ──
+       玩法：先点一个元素选中（会高亮），再点世界表面投放。
+
+       八个元素分两类：
+         · 火种 / 水珠 / 土石 / 气团 / 冰晶  —— 直接加/减局部本源
+         · 雷种                              —— 随机触发一次天象
+         · 光种 / 暗种                       —— 推高光暗值，还会打架
+
+       内容由 app.js 按 Elements.LIST 生成，不用手写八个按钮。 -->
+  <!-- ⚠️ 这个 palette-panel 类名是给文明阶段用的 ——
+       走到文明之后 .palette-panel 会被收起来（见 style.css 的 body.civ-on），
+       把地方让给编年史。 -->
+  <section class="panel watch-only palette-panel">
+    <!-- ── 元素栏上面那行说明 ★ 2026-09-16 加 ──
+         用户的原话：「投能量的那页加个说明，大意是你可以把加点元素到你的星球，
+         也可以选择什么都不干静静地观察星球的变化」。
+
+         ⚠️ 为什么**单独占一行**，不并进下面那句 `.palette-hint`：
+           下面那句**选中元素之后会被顶掉**（换成「火种 · 加热地表…」），
+           而这句话最该被读到的时刻，正是玩家**还没动手、正在犹豫**的时候 ——
+           挂在 hint 上就保不住。所以它常驻，和 hint 分工：
+           这一行说"你可以不出手"，下面那行说"要出手怎么出手"。
+
+         ⚠️ `<br>` 是**故意写死的断行**，不是排版偷懒：
+           整句 28 个字，挤成一行放得下（一行约 32 字，见 style.css），
+           但那样读起来是一句陈述；断成两行，才读得出"两条路"的意思。
+           改文案时记得重新数一下两行各多少字（别超 32）。 -->
+    <div class="palette-note">你可以往这颗星球上投放元素，<br>也可以什么都不做，只是看着。</div>
+    <div class="palette" id="palette"></div>
+    <div class="palette-hint" id="palette-hint">选一个元素，再点世界表面投放</div>
+  </section>
+
+  <!-- ── 【观察模式】倍速按键 ──
+       看快看慢由你。做成按键而不是滑杆 ——
+       观察的时候只想"快一点/慢一点"，不需要精确到 0.1 倍。 -->
+  <section class="panel watch-only">
+    <div class="speeds" id="speeds"></div>
+  </section>
+
+  <!-- ── 信息栏：世界名 / 种子 / 特殊属性标签 ──
+       种子才是这个世界的"身份证号"（同一个种子必然复现同一个世界），
+       所以只显示种子就够，不再单独编号。
+
+       世界名是玩家自己起的（点【演化】时弹出的那个窗口），
+       写在种子上面一行 —— 从头到尾都看得到，边看演化边看见自己起的名字。 -->
+  <section class="info">
+    <!-- ── 世界名 ★ 2026-09-16 **搬去顶栏了**（原来在这个位置）──
+
+         用户觉得它在底部单独占一行、字号偏大、和编年史抢视觉重心，
+         拍板挪到顶栏和观测编号并排（`<header class="topbar">` 的 `.obs-bar` 里）。
+         ⚠️ **不要搬回来** —— 底部那一行的空间现在是留给四属性 + 编年史的。 -->
+
+    <!-- ──【换一个星球】★ 2026-09-14 从底部按钮挪上来的 ──
+         用户的原话：「把换一个星球移动到种子XX上方，缩小居中，
+         不用现在的 UI，只要字体下面加横线那种」。
+
+         ⚠️ 三条都是用户定的：
+           ① 位置在**种子上面**（不是在按钮那一排）
+           ② 样式是**带下划线的文字链**，不是实心药丸按钮
+              —— 它是个"随时能点"的次要操作，不该和
+                 【开始演化】那样的主操作抢注意力
+           ③ 仍然**只在设置模式出现**（btnCreate.hidden 那行没改）
+
+         ⚠️ 世界名那一行虽然在设置模式下是空的，但**高度一直占着**
+            （见 style.css 里 .info-name 的 min-height），所以这一行
+            上面那个空位是"名字以后要待的地方"，不是多余的。 -->
+    <button class="info-create" id="btn-create" type="button">换一个星球</button>
+
+    <!-- ⚠️「种子 ------」那一行**全程隐藏**（见 style.css 的 .info-seed）——
+         藏起来不是删掉，分享机制以后还要用这个元素。 -->
+    <div class="info-seed"   id="info-seed">种子 ------</div>
+
+    <!-- 特殊属性标签（【双星系统】【剧毒大气】…）。
+         ★ 2026-09-14：用户要求「除了隐藏种子外，双星系剧毒这种信息
+           在**开始界面**也一起隐藏」—— 所以加了 `watch-only`。
+
+         ⚠️⚠️ 类的名字容易看反，记牢：
+             `watch-only` = **只在观察模式出现**（设置模式下藏起来）← 这个
+             `setup-only` = 只在设置模式出现（观察模式下藏起来）← 不是这个
+           两个的实际效果都写在 style.css 的 body.mode-* 那两条里。 -->
+    <div class="info-traits watch-only" id="info-traits"></div>
+  </section>
+
+  <!-- ── 底部按钮 ──
+
+       【换一个星球】 **只在设置模式出现** —— 想换一颗就点它，随便换多少次。
+                   （旧名叫【开辟世界】—— 太抽象，改成了现在这个。）
+                   演化一开始就藏起来（一局没走完不许中途重开）。
+                   想换新星球？先点【重置】回设置模式，它就回来了。
+       【演化】     设置模式里是"演化"，观察模式里是"暂停 / 继续"。
+                   **一直在，走到文明之后也不消失** ——
+                   那时世界还在转、文明光点还在点亮，你可以继续看。
+       【重置】     只有观察模式才有（用 CSS 的 .watch-only 控制，
+                   不走 JS）—— 退回混沌初始态，回设置模式重新调参再跑。
+
+       显隐和文字全部由 app.js 的 syncButtons() 统一管，
+       这里不写死 hidden，免得两边打架。 -->
+  <!-- ⚠️ 三颗按钮，但**同一时刻最多两颗看得见**：
+         · 设置模式：【开始演化】【观察记录】
+         · 观察模式：【暂停 / 继续】【重置】
+       【换一个星球】2026-09-14 挪到上面信息栏里去了（带下划线的文字链）。
+       `.watch-only` / `.setup-only` 两个类由 CSS 按 body 上的 mode-* 切换
+       （见 style.css），不用 JS 再管一遍。 -->
+  <footer class="bottombar">
+    <button class="btn btn-main"    id="btn-evolve"  type="button">开始演化</button>
+    <button class="btn watch-only"  id="btn-reset"   type="button">重置</button>
+
+    <!-- ── 档案库入口 ★ 2026-09-14 ──
+         ★ 用户定稿的说法：「观察模式不要观察记录入口，只有开始画面有，
+           跟演化一左一右对齐，统一 UI」。
+
+         ⚠️ 三条都别改回去：
+           ① `.setup-only` —— **观察模式里不出现**（那里已经有【暂停】【重置】
+              两颗了，再来一颗会挤）
+           ② 和【开始演化】**并排、一样大** —— 不另起一行。
+              试过"按钮下面单独一行文字链"，量出来要吃掉星球区 19~33px，
+              而且和按钮只隔 5px，用户一看就说违和
+           ③ `class="btn"` —— 和【开始演化】**同尺寸同形状**，只差颜色
+              （【开始演化】是 `.btn-main` 金色，它是普通色）。
+              用户 2026-09-14 选的：「大小一样，但演化保持金色」
+
+         ⚠️ 名字固定是「观察记录」四个字，后面不缀条数
+            （条数和上限在档案库面板的标题右边写着，
+              见 app.js 的 renderArchive —— 2026-09-16 起带上「最高可存 N 界」）。
+            ⚠️ 用户 2026-09-14 有一次写成「观察档案」——
+               问过了，**是笔误，还是「观察记录」**。
+
+         ⚠️ 它放在 .bottombar **里面**是有意的：.app 上有
+            `pointer-events: none`，里面的东西要靠一份"重新打开指针事件"
+            的名单才点得动，而 .bottombar 已经在名单里。
+            放外面就得再去改那份名单，多一处能忘的地方。 -->
+    <button class="btn setup-only"  id="btn-archive" type="button">观察记录</button>
+  </footer>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     命名弹窗 —— 第一次点【演化】时弹出，让你给这颗世界起名字
+
+     为什么要有这一步：世界是你亲手开出来的，给它起个名字，
+     看它演化的时候就不再是"一颗星球"，而是"我那一界"。
+
+     和结局面板同一个套路，放在 .app 外面：
+       · 不受 .app 的 max-width 限制，能真正整屏盖住
+       · 不受 .app 的 pointer-events: none 影响，按钮和输入框点得到
+
+     ⚠️ 没有 <form> 标签 —— 平台禁止表单跳转提交（红线 R11）。
+        输入框和按钮平级放着，全部用 addEventListener 接。
+        这样也就没有"提交跳转"这回事，不用去拦 submit。
+
+     ⚠️ 输入框里必须显式打开 user-select（见 style.css）——
+        body 上有 user-select: none，继承下来会导致没法拖光标改字。
+     ══════════════════════════════════════════════════════════════ -->
+<div class="naming" id="naming">
+  <div class="naming-card">
+
+    <div class="naming-kicker">为 此 界 命 名</div>
+
+    <!-- 输入框里已经预填好一个推荐名（app.js 按种子生成）——
+         想改就改，懒得想就直接点下面的【开始演化】。
+         maxlength 是硬上限，超了根本打不进去。 -->
+    <input class="naming-input" id="naming-input" type="text"
+           maxlength="8" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false" placeholder="未命名" />
+
+    <div class="naming-foot">
+      <span class="naming-limit">最多 8 个字</span>
+      <button class="naming-link" id="naming-reroll" type="button">换一个</button>
+    </div>
+
+    <button class="btn btn-main naming-go" id="naming-go" type="button">开始演化</button>
+
+    <!-- 万一【演化】是误点的，从这里退回设置模式继续调参 -->
+    <button class="naming-link naming-back" id="naming-back" type="button">返回</button>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     文明诞生 —— 世界刚走到「文明」阶段时弹出
+
+     玩家看够了前面的演化，这一刻终于知道长出来的是什么文明。
+     关掉之后世界才开始走"文明发展期"（60~120 秒）。
+
+     ⚠️ 面板开着的时候世界是**冻着**的（闸门在 core/evolution.js 的
+        stepCiv 里，看到 phase === 0 就返回 null）。
+        所以你不点【继续】，它就一直等你。
+
+     ★ 2026-09-13：这一屏**顺手让玩家给文明起名**了。
+       原来名字是一行大字（div），现在换成同字号、同样居中的输入框 ——
+       版式几乎没动，但玩家能改了。
+
+       ⚠️ 输入框里**预填**着推荐名（Civ.civName 按种子算的）——
+          懒得想的玩家直接点【继续观察】，行为和以前一模一样。
+
+       ⚠️ 这里**故意不自动聚焦**（和世界命名弹窗不一样）：
+          那一屏的全部任务就是起名，弹键盘是对的；
+          这一屏的主角是"揭晓长出来的是什么文明"，一进来就弹键盘会把它盖住。
+          玩家想改名自己点一下输入框。
+
+     内容由 app.js 按 world.civ 填进去，这里只留空壳。
+     ══════════════════════════════════════════════════════════════ -->
+<div class="civbirth" id="civbirth">
+  <div class="civbirth-card">
+
+    <div class="civbirth-kicker">文 明 诞 生</div>
+
+    <!-- ⚡ 观测异常的记号（1% 的世界才有，app.js 控制显隐）。
+         ⚠️ 它**不在输入框里** —— 放进去的话玩家一起名就把记号删了，
+            而且会跟着 world.civ.title 存下来（结局卡片上会变成「⚡ ⚡ 星海」）。 -->
+    <div class="civbirth-egg" id="civ-egg" hidden>⚡ 观测异常</div>
+
+    <!-- 字数和 world 的输入框一样是 8（app.js 的 CIV_NAME_MAX 必须跟着这个数） -->
+    <input class="civbirth-name" id="civ-name" type="text"
+           maxlength="8" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false" placeholder="未命名" />
+
+    <div class="civbirth-namerow">
+      <span class="naming-limit">最多 8 个字</span>
+      <button class="naming-link" id="civ-reroll" type="button">换一个</button>
+    </div>
+
+    <div class="civbirth-rows" id="civ-rows"></div>
+
+    <button class="btn btn-main civbirth-go" id="btn-civ-go" type="button">继续观察</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     演化路线选择 —— 世界走到岔路口时弹出
+
+     两道岔路口（其余阶段不问，直接过去）：
+       进「海洋」→ 海洋更多 / 陆地更多 / 水陆均衡
+       进「生态」→ 植被先蔓延 / 动物先出现 / 二者同步
+     ⚠️ 2026-09-17 改：原来这里还列着**第三道**「进『文明』→ 和平 / 征战 / 求知」——
+        **那道题 2026-09-14 整个删掉了**，现在只有两道。
+        理由见 `core/choices.js` 开头「第三道岔路口为什么删掉」那一段。
+
+     弹出时世界会**屏住呼吸** —— 图层不长、本源不漂移、时间也不走，
+     等你答完才继续（闸门在 core/evolution.js 的 step 里）。
+
+     ⚠️ 三个选项按钮是 app.js 按 core/choices.js 的定义**动态生成**的，
+        这里只留一个空壳。为什么不写死在 HTML 里：
+        选项的文案（好处 / 代价）和它真正改世界的代码在同一个文件里，
+        改的时候只改一处，不会出现"文案说涨水、代码在涨地"这种对不上。
+
+     ⚠️ 选项按钮上**只有名字和一句说明**，不预告好处和代价 ——
+        把得失写在题面上，选择就从"凭对世界的理解做判断"变成"算一下哪个划算"。
+        好处和代价改在**选完之后**、由 #choice-result 这个结果视图给出
+        （见 app.js 的 showChoiceResult / confirmChoice）。
+
+     ⚠️ 结果视图期间世界是**冻着**的：答完不立刻落地，等玩家按【继续】
+        才调 Choices.resolve（见 app.js 的 pendingOpt）。
+        所以【继续】是玩家在这个状态下**唯一的出口** ——
+        底下那些按钮全被这层浮层盖住了，没有 Esc、没有点击背景关闭。
+     ══════════════════════════════════════════════════════════════ -->
+<div class="choice" id="choice">
+  <div class="choice-card">
+    <div class="choice-kicker"   id="choice-title">——</div>
+    <div class="choice-question" id="choice-question">——</div>
+    <div class="choice-options"  id="choice-options"></div>
+
+    <!-- 结果视图 —— 和 #choice-options 互斥，由 hidden 属性切换。
+         ⚠️ 必须用 hidden（display:none），不能用淡出：
+            opacity:0 的元素照样能点，选项按钮会藏不住。
+         ⚠️ 「你选了：X」复用上面的 #choice-question，不另开一行标题。 -->
+    <div class="choice-result" id="choice-result" hidden>
+      <div class="choice-opt-gain" id="choice-res-gain"></div>
+      <div class="choice-opt-cost" id="choice-res-cost"></div>
+      <!-- ★ 2026-09-13 加。⚠️ 2026-09-17 修的说法：
+           它原来写的是「文明事件专用的一行：『他们是「征战」型的生灵。』」——
+           **那个界面 2026-09-13 就删了**。现在这一行是**大事件**在用的：
+           显示选中那一条的 `chronicle`（见 `app.js` 里写 `choice-why` 那几行）。
+           两道岔路口走不到这里（文本会被清空）。 -->
+      <div class="choice-why" id="choice-why"></div>
+      <button class="btn btn-main choice-go" id="btn-choice-go" type="button">继续</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     结局面板 —— 世界走到文明时弹出，像一份「结案报告」
+
+     放在 .app **外面**（和画布、.app 平级），这样它才是真正的整屏覆盖，
+     不会被 .app 的 max-width 和 pointer-events 规则影响。
+
+     关掉之后世界继续转 —— 你还能投放元素、看文明光点铺满。
+     ══════════════════════════════════════════════════════════════ -->
+<div class="ending" id="ending">
+  <div class="ending-card">
+
+    <div class="ending-kicker">观 测 记 录 · 最 终 摘 要</div>
+
+    <!-- ── 星球 ──
+         「能不能住」看三样：水、大气、生态（见 ending.js 的 ratingLine）。
+         能量和大地不在这儿 —— 它们决定的是"长出什么文明"，不是"住不住得下去"。 -->
+    <div class="end-sec">
+      <div class="end-sec-title">── 星球 ──</div>
+      <div class="end-row">
+        <span class="end-k">评定</span><span class="end-v" id="end-rating">——</span>
+      </div>
+      <p class="end-line" id="end-rating-line"></p>
+    </div>
+
+    <!-- ── 文明 ──
+         命运在「命运预兆」那一刻就算定了（core/evolution.js），
+         所以预兆动画和这一屏读的是**同一个值**。 -->
+    <div class="end-sec">
+      <div class="end-sec-title">── 文明 ──</div>
+      <div class="end-row">
+        <span class="end-k">命运</span><span class="end-v" id="end-branch">——</span>
+      </div>
+      <p class="end-line" id="end-fate-line"></p>
+    </div>
+
+    <!-- ── 物种信息 ──
+         名称 / 原型 / 特质 / 倾向 四项。
+         「名称」是文明自己的名字（比如「潮汐议会」），由 core/civ.js 生成；
+         后三项就是文明的三层：物种 / 形态 / 性格。
+         行内容由 app.js 填。没走到文明的世界整块藏起来。 -->
+    <div class="ending-civbox" id="end-civbox">
+      <div class="ending-civname" id="end-civname"></div>
+      <div class="ending-civrows" id="end-civrows"></div>
+    </div>
+
+    <!-- ── 存续 ──
+         ⚠️ 只在走到过文明的世界才出现（没走到就整块藏起来）——
+            周期数是"从第一处聚居点算起"的，没有文明就没有这个数。
+
+         ⚠️⚠️ 2026-09-13：这里本来还有「最终压力 / 资源·环境·分歧」三格，
+             **试做之后用户看了实际效果，决定整个删掉。** 理由见 CLAUDE.md：
+             命运本身已经回答了"是怎么没的"，三个数只是同一个答案的细分；
+             而且 31% 的局三个数都在 ±10 以内，读不出名堂。
+             想加回来的话在 git 里（连同 81 个事件的轴标签）。 -->
+    <div class="end-sec" id="end-stats">
+      <div class="end-row">
+        <span class="end-k">存活周期</span><span class="end-v" id="end-cycles">——</span>
+      </div>
+    </div>
+
+    <!-- 记录全文（传记）—— 整张卡片唯一左对齐的一段 -->
+    <p class="ending-bio" id="end-bio"></p>
+
+    <div class="end-foot" id="end-foot">编年史已归档。</div>
+
+    <!-- ── 底部按钮：**两颗，两个动作是平级的** ──
+
+         ⚠️⚠️ 2026-09-14 晚：这里原来有**三颗**，第三颗是【返回档案库】——
+             那是给"从档案库点开时，这张卡只剩一颗出口"用的。
+             做成「记录页」之后，**从档案库点开不再走这张卡了**，
+             那一整条分支（参数、那颗按钮、`alone` 版式、7 条断言）
+             随之整个删掉。判据是 CLAUDE.md 决策 #61：
+             **删掉它，行为会不会变？不会就是维护成本。**
+             想捞回来看 git。
+
+         现在只剩"玩到结局"一条来路：
+           【存入档案库】存这一局 ／ 【继续观察】关掉接着看。
+
+         ⚠️ 两颗按钮的 class **必须一模一样**（2026-09-13 用户拍的）⚠️⚠️
+         原来是一个 `btn ending-archive`（灰字灰边、按内容宽）、
+         一个 `btn btn-main ending-close`（金边、占满）——
+         结果一大一小、一灰一金。
+         **不要再给任何一个加专属的类** —— 想区分就用 id（app.js 也是按 id 找的）。
+         `_wiring_test.js` 直接比对这两串 class 字符串守着这条。 -->
+    <div class="ending-actions" id="ending-actions">
+      <button class="btn btn-main" id="btn-ending-archive" type="button">存入档案库</button>
+      <button class="btn btn-main" id="btn-ending-close"   type="button">继续观察</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     档案库 —— 存下来的世界  ★ 2026-09-14 新增
+
+     从底部的【观察记录】打开。一条 = 一个世界：
+     一颗小星球 + 名字 + 评定·命运 + 文明名·物种。
+     点一下翻出那一界的**记录页**（完整全史，见下面 .record）。
+
+     ⚠️ 2026-09-14 晚改的：**点开不再"装回主界面 + 弹结局卡"了。**
+        两条理由：① 用户要的是"读一份记录"，不是"重开那一局"；
+        ② 原来那一下会 `world = w`，把玩家主界面正在开着的那颗球顶掉。
+        现在点开是**纯只读**，什么都不碰。
+
+     ⚠️ 存的是"能复原的一整套"，不是整份世界档案 ——
+        形状数据（纹理点、斑块）能用种子重新烘，占了档案的九成。
+        见 core/worldgen.js 的 stripWorld / restoreWorld。
+
+     ⚠️ 档案存在 localStorage 里，**按小工具独立隔离**（平台规范说的）。
+        但同一份规范也写了「数据不保证永久持久化」——
+        所以界面文案上别承诺"永久保存"，也别把它当唯一存档。
+     ══════════════════════════════════════════════════════════════ -->
+<div class="archive" id="archive">
+  <div class="archive-card">
+
+    <div class="archive-head">
+      <!-- ⚠️ 标题**字间带空格**（和「文 明 诞 生」「观 测 记 录」同一套写法），
+              不是打错了。2026-09-16 用户把「我 的 档 案 库」缩成了「档 案 库」。 -->
+      <span class="archive-title">档 案 库</span>
+      <span class="archive-count" id="archive-count"></span>
+    </div>
+
+    <!-- 列表由 app.js 填（条数是变的，写死在 HTML 里没意义） -->
+    <div class="archive-list" id="archive-list"></div>
+
+    <div class="archive-actions">
+      <!-- 【清空】是**两下**才清的：点第一下变成「确定清空？」，
+           再点一下才真清。不用 window.confirm —— 原生弹窗在一屏
+           深色界面里很出戏，而两下确认一样能防手滑，还不用计时器。 -->
+      <button class="btn archive-clear" id="btn-archive-clear" type="button">清空</button>
+      <button class="btn btn-main" id="btn-archive-close" type="button">返回</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     记录页 —— 一个文明的完整全史  ★ 2026-09-14 新增
+
+     从档案库点开一条时翻出来。**只读**：不装世界、不碰 world 变量。
+
+     四节（由 app.js 的 fillRecordBody 填，**哪几节出现是变的**）：
+       ── 星球 ──    评定 + 摘要 + 种子
+       ── 文明 ──    文明名 / 原型·特质·倾向 / 命运 / 存活周期
+       ── 编年史 ──  ★ 全部历史行（六种样式，见 style.css 的 .chron-row）
+       ── 记录全文 ── 传记
+
+     ⚠️ **没走到文明的世界只有「星球」和「记录全文」两节** ——
+        文明/编年史/存活周期那三块整块不出现（没有就是没有，不许编）。
+
+     ⚠️⚠️ 底部**必须留着出口**：这一层是整屏盖住的，
+        点外面没反应、没有 Esc、刷新丢页面。藏光了玩家就出不去了。
+        （结局面板踩过一次，`_wiring_test.js` 有断言守着这条。）
+
+     ⚠️ 排版**复用结局面板那一整套类**（.end-sec / .end-row / .end-k /
+        .end-v / .end-line / .ending-civname / .ending-civrows / .ending-bio）
+        —— 新写的只有最外面 `.record` 那层容器。
+        好处：以后改结局面板的排版，这一页跟着一起变，不会走样。
+     ══════════════════════════════════════════════════════════════ -->
+<div class="record" id="record">
+  <div class="record-card">
+
+    <div class="record-kicker">观 测 记 录 · 存 档</div>
+
+    <!-- ⚠️ 这**只是一张图** —— 打开时现画一次、画完就扔，
+         不是"活的世界"（用户 2026-09-14 的原话：
+         「星球就单存的留个图片，不是留之前的数据」）。
+         尺寸写在 HTML 上（画布像素），显示大小由 style.css 定。 -->
+    <div class="record-planetwrap">
+      <canvas class="record-planet" id="record-planet" width="420" height="420"></canvas>
+    </div>
+
+    <!-- 四节都塞在这儿（app.js 的 fillRecordBody 建） -->
+    <div id="record-body"></div>
+
+    <!-- ⚠️ 两颗按钮的 class 和结局卡那两颗同一个规矩：
+         想区分就靠 id，**不要给某一颗挂专属的类**。
+         谁想"加个主次"，先看 style.css 里 .ending-actions 那段注释。 -->
+    <div class="record-actions">
+      <button class="btn btn-main" id="btn-record-back" type="button">返回列表</button>
+      <button class="btn"           id="btn-record-home" type="button">回主界面</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     脚本必须外置！
+     平台 CSP 的 script-src 不含 unsafe-inline，
+     内联 <script>...</script>、onclick="..." 全部会被拦掉。
+     ══════════════════════════════════════════════════════════════ -->
+
+<!-- 核心逻辑（零 DOM 依赖）—— 加载顺序不能换，后面依赖前面 -->
+<script src="./core/rng.js"></script>
+<script src="./core/elements.js"></script>
+<script src="./core/civ.js"></script>
+<script src="./core/choices.js"></script>
+<!-- ⚠️ civLore 排在 civEvents **前面** —— civEvents 要从它里面
+     取物种专属事件（虫类的「数量失控」、石类的「矿脉枯竭」…）。 -->
+<script src="./core/civLore.js"></script>
+<script src="./core/civEvents.js"></script>
+<script src="./core/worldgen.js"></script>
+<!-- ⚠️ ending 排在 evolution **前面** —— 反直觉，但必须这样：
+     evolution 在「命运预兆」开始时就要调 Ending.fate() 把命运定下来
+     （详见 core/evolution.js 里「文明阶段」那一大段注释）。 -->
+<script src="./core/ending.js"></script>
+<script src="./core/evolution.js"></script>
+
+<!-- 绘制（只依赖一个 canvas 对象） -->
+<script src="./render/renderer.js"></script>
+
+<!-- 外壳（主循环、事件、界面） -->
+<script src="./app.js"></script>
+
+</body>
+</html>

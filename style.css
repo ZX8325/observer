@@ -1,0 +1,2296 @@
+/* ═══════════════════════════════════════════════════════════════════
+   观测者 · 样式
+   ═══════════════════════════════════════════════════════════════════
+   ⚠️ 两条硬性要求（来自官方规范 cross-platform-h5.md）：
+      ① 不要写死像素宽度（不出现 width: 375px 这种），
+         布局用 % / flex / vw，这样手机和电脑上都不会错位。
+      ② 安全区要写 env(safe-area-inset-*) + fallback，
+         否则刘海屏和底部横条会挡住内容。
+         （PC 模拟器下 inset 为 0，真机是真值 —— 所以 fallback 必须写）
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   ★★ Chrome 61 兼容基线 —— 全文件通用的一条规矩（2026-09-17 加）★★
+
+   平台基线是 **Android 8.1 出场 WebView / Chrome 61**
+   （官方规范 css-compatibility.md），比现在的浏览器旧很多。
+   ⚠️ **CSS 不兼容不报错**，浏览器是**静默丢掉**那条声明（甚至整条规则）——
+      所以这类毛病在电脑上、在模拟器里**全都看不出来**，只在旧机器上塌。
+      这也是它必须靠测试盯着、不能靠"看着没问题"的原因。
+
+   本文件踩到两种，和它们的等价改法：
+
+   ① `min()` / `max()` / `clamp()` —— 要 Chrome 79+
+      → 改成「固定值 / 百分比 / calc() + 媒体查询分档」（官方规范原话）。
+      · `--u` 是这一种，也是**全文件唯一会「塌」**的地方（理由见下面那段）；
+      · `.app` 和六张卡片的 `max-width: min(100%, Npx)` 也是 ——
+        但那几处 `width` 本来就是 `100%`，max-width 只负责封顶，
+        所以**直接写 `Npx` 就逐点等价**，连分档都不需要。
+
+   ② flex 的 `gap` —— 要 Chrome 84+，本文件 18 处，**还没修**（已记进
+      docs/ROADMAP.md 的「待定的改动」）。退化是"元素贴在一起"，
+      不是塌，所以排在 `--u` 后面。
+
+   ⚠️⚠️ 为什么不能写 `@supports (gap: 1px)` 去检测 gap：
+      `gap` 最早是 **grid** 的属性（Chrome 57+），Chrome 61 **认得这个语法**，
+      只是不把它用在 flex 上 —— 检测会返回 **true**，兜底永远不生效。
+      官方规范专门点了这个坑，要求"用 JS 实际测量布局"，不要查语法。
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ═══════════════════════════════════════════════════════════════
+     ★★ 2026-09-15：整套配色换成「观测站」调性 ★★
+        关键词：观测站 / 仪器 / 数据 / 寂静 / 精密
+        参考：《星际穿越》飞船界面、《降临》
+        不要：霓虹 / 赛博朋克 / 故障风 / 荧光绿
+        改动核心：**暖金 #F0C060 → 冷蓝 #4FA8E8**，圆角全部归零。
+
+     ⚠️ 改名前叫 --gold / --muted，全文件 46 处引用一起改了。
+        没留兼容名 —— 留的话就是两份真相，迟早对不上。
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* ── 背景 ── */
+  --bg:          #050508;                /* 深空底色（比原来更黑）*/
+  --panel-bg:    rgba(10, 12, 20, 0.92); /* 面板底 */
+  --panel-line:  rgba(79, 168, 232, 0.14);/* 面板边框：极淡的冷蓝 */
+
+  /* ── 文字 ── */
+  --text:        #D8DCE4;                /* 主文字 */
+  --text-dim:    #6E7A88;                /* 次要文字
+        ⚠️ 2026-09-15 提亮：原来是 #5A6472，在深空底（#050508）上只有
+           **3.39:1**，低于 WCAG AA 的 4.5:1。现在 **4.65:1**，刚过线。
+           降回去的话，滑杆标签和次要说明在手机上会看不清。*/
+  --text-faint:  #343A44;                /* 更弱：分隔、占位 */
+
+  /* ── 强调（**单一强调色**：冷蓝）── */
+  --accent:      #4FA8E8;
+  --accent-soft: rgba(79, 168, 232, 0.14);
+  --warn:        #E86A6A;                /* 冷红，警示 */
+  --data:        #6AE8C0;                /* 冷青：数据 / 状态 */
+
+  /* ⚠️⚠️ **语义色：不跟着主色走** ⚠️⚠️
+     编年史「他们的决定」（deed）必须是暖金 —— 它和「观察者出手」（act，
+     冷白）是一对，靠冷暖拉开。主色从暖金换成冷蓝时，
+     批量改名差点把它一起换掉（2026-09-15 实际发生了，改回来了）。
+     ★ 单独立个变量就是为了让下一个人知道：**这个不是 UI 强调色**。*/
+  --deed:        #F0C060;
+
+  /* ── 细线 ──
+     ⚠️ 名字和用户给的规格一致：`--line` 是**宽度**。
+        原来 `--line` 是颜色，改名成 `--hair`（只有 3 处引用，都改了）。*/
+  --line:        1px;
+  --hair:        rgba(255, 255, 255, 0.10);
+
+  /* ── 尺寸 ── 直角，不用圆角（去「App 感」）── */
+  --radius:      0;
+
+  /* ── 字体 ──
+     ⚠️ 前几个是 macOS 才有的（SF Mono / JetBrains Mono），手机上会一路
+        退到 Consolas（Windows）/ monospace（安卓）—— fallback 链是完整的，
+        不写死。中文数字走 --font-sans（汉字不受等宽影响，
+        `tabular-nums` 只管阿拉伯数字 —— 界面上的阿拉伯数字是四个读数）。*/
+  --font-mono:   'SF Mono', 'JetBrains Mono', 'Space Mono',
+                 'Roboto Mono', Consolas, monospace;
+  --font-sans:   -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+
+  --btn-bg:      rgba(255, 255, 255, 0.05);
+  --btn-line:    rgba(255, 255, 255, 0.18);
+
+  /* ═══════════════════════════════════════════════════════════════
+     --u = 一个「布局单位」= 容器宽度的 1%
+
+     ⚠️⚠️ 千万别改回 vmin / vh —— 那是个能把星球变没的坑 ⚠️⚠️
+
+     为什么：vmin / vh 是**视口**的尺寸，而 .app 被限制在 560px 宽。
+     在 1920×1080 的电脑上，vmin = 1080px，
+     于是 `font-size: 3.9vmin` 会算出 42px —— 字大得离谱，
+     所有面板加起来超过视口高度，中间留给世界那块被挤成 0 高，
+     **星球就整个消失了**（只在宽屏电脑上出现，手机上正常）。
+
+     改成"容器宽度的 1%"之后，不管视口多大，
+     布局单位都跟着这条 560px 的竖栏走，不会再撑爆。
+
+     ★★ 2026-09-17：原来是 `calc(min(100vw, 560px) / 100)` 一行，★★
+        但 Chrome 61 不认 min()（见文件头那段），会**把这条声明整条丢掉**。
+        --u 一旦无效，**下面 170 处引用它的规则会一起塌** —— 这是全文件
+        唯一一处"不是变丑、是直接崩"的地方，所以按官方规范拆成两半：
+          这里 = 不带条件都能算的**基线**
+          :root 外面的 @media = **分档**
+        两者合起来和原来那一行**逐点等价**：
+            视口 < 560px  →  100vw / 100
+            视口 ≥ 560px  →  560px / 100
+        ⚠️ 560 这个数因此写了两遍（@media 里 + .app 的 max-width）。
+           CSS 变量进不了媒体查询条件，没法共用 —— 所以
+           _wiring_test.js 第 22 节有断言盯着这两处必须一致。
+     ═══════════════════════════════════════════════════════════════ */
+  --u: calc(100vw / 100);
+
+  --gap: calc(var(--u) * 3.2);           /* 各块之间的间距 */
+  --pad: calc(var(--u) * 4);             /* 左右内边距 */
+}
+
+/* ↑ --u 的**分档**，不是"第二套样式" —— 它和上面 --u 的基线条合起来才是原式。
+   ⚠️ 为什么不干脆用 `@supports (width: min(1px, 2px))` 包一层：也行，
+      但那样是三层、同一个数算三遍，改的时候要同步三处。
+      --u 只取决于视口宽度，媒体查询正好够用（也是官方规范点名的做法）。 */
+@media (min-width: 560px) {
+  :root { --u: calc(560px / 100); }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* 带 hidden 属性的元素彻底不显示。
+   ⚠️ 为什么还要自己写一条：浏览器默认的 [hidden] 样式优先级很低，
+      一旦有别的规则给它设了 display，就会失效。
+      【换一个星球】这个按钮靠 hidden 控制显隐（观察模式要藏起来），
+      不能让它意外露出来。 */
+[hidden] { display: none !important; }
+
+html {
+  height: 100%;
+  touch-action: manipulation;            /* 去掉双击缩放的 300ms 延迟 */
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+               "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;           /* 禁掉长按弹出系统菜单 */
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;                      /* 单页应用，不滚动 */
+}
+
+/* ───────────────────────────────────────────────────────────────
+   整体：竖向三段式（顶部标题 / 中间世界 / 底部控件）
+   用 flex 纵向排列 —— 这样"信息栏挡住按钮"那类问题从根上不会发生，
+   因为浏览器自己会把每一块排好，不会互相压。
+   ─────────────────────────────────────────────────────────────── */
+.app {
+  /* 浮在画布之上。画布是整屏铺满的星空背景（见下面的 #world），
+     界面元素靠这一行压在它上面。 */
+  position: relative;
+  z-index: 1;
+
+  /* ⚠️ 这一层**不接收点击**。
+     它是一层盖在画布上的"壳"，中间那块（.stage）是空的。
+     点击必须能穿透下去落到画布上 —— 否则"点世界投放元素"就没法做，
+     因为点在世界上的手指会先被这层壳接走。
+
+     做法：整层关掉指针事件，再把真正需要点击的控件单独打开。
+     .stage 不在下面的名单里，所以中间的点击会直接穿到画布。 */
+  pointer-events: none;
+
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  /* 大屏上不要摊成一片 —— 保持"竖向一条"的比例，居中显示。
+     手机屏幕本来就比 560px 窄，所以这条对手机完全没有影响。
+     ⚠️ 这里原来写的是 `min(100%, 560px)`。.app 是块级元素、宽度本来就撑满
+        父级，max-width 只负责封顶 —— 所以直接写 560px **逐点等价**，
+        而 Chrome 61 只认这一种（见文件头「Chrome 61」那段）。 */
+  max-width: 560px;
+  margin: 0 auto;
+
+  padding: env(safe-area-inset-top, 0px)
+           env(safe-area-inset-right, 0px)
+           env(safe-area-inset-bottom, 0px)
+           env(safe-area-inset-left, 0px);
+}
+
+/* 真正需要点击的控件，把指针事件打开回来。
+   .stage（中间那块）故意不在名单里 —— 它要让点击穿到画布上。 */
+.topbar, .panel, .stages, .info, .bottombar, .chronicle {
+  pointer-events: auto;
+}
+
+/* ── 顶部 ──
+   ⚠️ 2026-09-15：`.title`（那行「沙盒创世模拟器」）已整个删掉 ——
+      用户要求去掉，上线不叫这个名字。规则和 HTML 里的 h1 **一起删的**，
+      不留死 CSS（判据是决策 #61：删掉它，行为会不会变？）。
+   `.topbar` 留着：它是 toast 的容器，而且 style.css 那份
+   「重新打开指针事件」的名单里有它（_wiring_test.js 会查）。 */
+.topbar {
+  flex: 0 0 auto;
+  padding: var(--gap) var(--pad) 0;
+  text-align: center;
+  position: relative;
+}
+
+/* ── 观测编号 + 状态点（P1#9，2026-09-15 提前到 P0）──
+   顶上原来是空的（标题删掉之后）。这一行把「观测站」的调性落到界面上。
+
+   ⚠️ 高度**压在 3u 左右** —— 竖向空间是从星球那里扣的，
+      见 .chronicle 上面那段账。换来的是"这是一台仪器，不是一个 App"。 */
+.obs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 1.4);
+  font-family: var(--font-mono);
+  font-size: calc(var(--u) * 2.4);
+  line-height: 1.3;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
+  color: var(--text-faint);
+}
+
+.obs-code {
+  font-variant-numeric: tabular-nums;   /* 编号里的数字不抖 */
+}
+
+/* 状态点：**直角**，和整套调性一致 */
+.obs-dot {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 1.1);
+  height: calc(var(--u) * 1.1);
+  background: var(--data);
+  opacity: 0.22;
+  transition: opacity 0.3s ease;
+}
+
+/* 世界在跑 → 呼吸（P2#14：2 秒一轮） */
+.obs-dot.on {
+  opacity: 1;
+  animation: obs-pulse 2s ease-in-out infinite;
+}
+
+@keyframes obs-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.28; }
+}
+
+/* 阶段提示：默认透明，加 .show 类才淡入（用 CSS transition，代码里只管切换类名） */
+.toast {
+  height: calc(var(--u) * 5);
+  margin-top: calc(var(--u) * 1.2);
+  font-size: calc(var(--u) * 3.4);
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.toast.show { opacity: 1; }
+
+/* ── 中间：世界所在的那块区域 ──
+   这个 div 本身是空的，只负责"占住中间那块地方"，
+   告诉 JS「世界该画在哪里、能画多大」。
+
+   flex:1 让它吃掉剩余空间；min-height:0 是关键 ——
+   不加的话 flex 子项默认不肯缩到内容以下，会被撑破。 */
+.stage {
+  flex: 1 1 auto;
+
+  /* 保底高度：不管上面下面塞了多少控件，中间至少留这么多给世界。
+     不留的话，窗口一扁，这块会被挤成 0 高 —— 星球就整个消失了。 */
+  min-height: calc(var(--u) * 34);
+}
+
+/* ── 画布：铺满整个视口 ──
+   ⚠️ 注意是"视口"（整个屏幕）不是"容器"。
+   这样星空会一直铺到标题栏、信息栏、按钮区的底下 ——
+   否则星星只在中间一块有，整个界面看起来像个相框里的图。
+
+   它用 position:fixed 脱离文档流，所以 .stage 会变成空的高度占位，
+   JS 再读 .stage 的位置来决定世界画在哪。 */
+#world {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  display: block;
+  touch-action: none;
+}
+
+/* ── 信息栏 ── */
+.info {
+  flex: 0 0 auto;
+  padding: var(--gap) var(--pad) 0;
+  text-align: center;
+  line-height: 1.55;
+}
+
+/* ── 世界名（玩家自己起的）──
+
+   ⚠️ 高度**一直占着**，哪怕还没起名（内容为空）——
+      不占的话，起名那一刻信息栏会长高 5.6u，中间的世界会跟着往下跳。
+
+   ★ 2026-09-14 补了一条：**设置模式下而且没名字时，整行收掉**。
+     因为现在有两条路都会把名字清成 null（`createWorld` 和【重置】），
+     **设置模式里它永远是空的** —— 留一个永远空着的 34px 纯浪费。
+     收掉之后那 34px 直接变成星球的高度。
+
+   ⚠️ 用 `:empty` 而不是干脆删掉占位：万一以后有哪条路在设置模式下
+      给了名字，这一行会自己回来（`textContent` 非空就不匹配 `:empty`），
+      **不用再去改 CSS**。 */
+body.mode-setup .info-name:empty {
+  display: none;
+}
+
+.info-name {
+  /* ★ 2026-09-16：从底部那一行**挪到顶栏**了（和观测编号并排）。
+       原来 4.4u / 金色强调 / 单独占一行 —— 和编年史抢视觉重心，
+       用户拍板降一档、改成暗色。 */
+
+  /* ⚠️ 这个 min-height 现在只是**为了让断言有东西可查**（见 _wiring_test.js）。
+       它原来的用处是"没起名时也占着高度，免得起名那一刻界面往下跳"——
+       那件事现在由 `body.mode-setup .info-name:empty { display: none }` 管了。
+       所以压到 1em：再大就会把顶栏顶高，而顶栏的高度是从星球那里扣的。 */
+  min-height: 1em;
+
+  font-size: calc(var(--u) * 3);   /* 4.4u → 3u，降一档 */
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);          /* 金色强调 → 次要文字（用户要的）*/
+  white-space: nowrap;             /* 名字再长也不把顶栏撑成两行 */
+
+  /* ⚠️ `line-height: 1` 不是随手写的：`.obs-bar` 继承下来的是 1.3，
+       3u × 1.3 = 3.9u，会把整条顶栏顶高到比 `.obs-code`（2.4u × 1.3 = 3.12u）
+       还高 —— 顶栏一高，星球就矮。设成 1 之后这一格只有 3u，
+       顶栏高度仍然由编号那格说了算，**一行都不长**。 */
+  line-height: 1;
+}
+
+/* 和观测编号之间那个「·」
+   ★ 用 `::before` 画，**不新增 DOM** —— 名字空掉时它跟着一起消失，
+     不用额外写一条"名字空的时候把分隔点藏掉"的规则。 */
+.info-name::before {
+  content: '·';
+  margin-right: calc(var(--u) * 1.2);
+  color: var(--text-faint);
+  letter-spacing: 0;   /* 不继承父级的 0.14em，否则「·」右边多一截空 */
+}
+
+.info-seed {
+  /* ⚠️⚠️ 2026-09-14 起**全程隐藏**（用户原话：「种子XXX全程隐藏」）⚠️⚠️
+
+     ⚠️ **元素和 app.js 里那行 `elSeed.textContent = ...` 都留着**，
+        只是不显示（不是删掉）。理由：种子是这个游戏唯一的
+        「世界身份证」—— 分享机制全靠它（同种子 = 同世界，见第五节）。
+        它只是**现在不摆在主界面上**：
+          · 档案库里每一条**都存了 seed**（`entry.seed`），随时拿得出来
+          · 第 11 步的分享卡片本来就该显示种子
+        现在删掉的话，做分享卡片时又得从头接一遍。
+
+     ⚠️ 用 `display: none` **不能用 `visibility: hidden`** ——
+        后者元素**还占着高度**，星球区一像素都不会变大，等于白藏。
+
+     ⚠️ 下面那几行字色字号留着（虽然现在用不上）：哪天要放回来，
+        把这一行删掉就行，不用重新描一遍样式。 */
+  display: none;
+  font-size: calc(var(--u) * 3.6);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.05em;
+}
+
+/* 特殊属性标签。没有属性时高度也占着，版式不会跳 */
+.info-traits {
+  min-height: 1.55em;
+  font-size: calc(var(--u) * 3.1);
+  color: var(--accent);
+}
+
+/* ──【换一个星球】★ 2026-09-14 从底部按钮挪上来的 ──
+
+   用户的原话：「把换一个星球移动到种子XX上方，缩小居中，
+   不用现在的 UI，只要**字体下面加横线**那种」。
+
+   ⚠️ 为什么不做成按钮：它和【开始演化】【观察记录】**不是一类事** ——
+      那两颗是"这一局怎么走"，而【换一个星球】是"跳出这一局、重开一局"。
+      做成一样重的实心药丸，三颗并排挨着，玩家会不知道该点哪个。
+
+   ⚠️ 为什么挪到信息栏：底部那一排留给"这一局的操作"，
+      而它是"换一局"。位置本身就说明了性质。
+
+   ⚠️ 它仍然**只在设置模式出现**（app.js 的 syncButtons 管着），
+      所以下面那份"重新打开指针事件"的名单里必须有 .info ——
+      好在本来就有（见上面 .topbar, .panel, .stages, .info 那一条）。 */
+.info-create {
+  /* inline-block 才能被父级的 text-align: center 居中 */
+  display: inline-block;
+
+  /* ⚠️ 内边距、行高都收到刚好 —— **这一行每高 1px，星球就矮 1px**。
+     但也不能太小：2026-09-14 第一版字号只有 2.9u（比上面那行「种子」还小），
+     用户说「居中，把换一个星球放大一点」—— 太小了就没有"能点"的分量。
+     现在是 3.4u，比正文大一档，仍然明显小于底部那两颗按钮（它们 3.0u + 3u 内边距）。
+
+     line-height 不能用 1：下划线（text-underline-offset 撑在字下面）
+     会被裁掉一截。1.45 是"下划线放得下"的实测最小值。 */
+  /* ⚠️ 上下边距**故意不对称**：上面 0.3u、下面 2.6u。
+
+     ⚠️ 这条是 2026-09-14 调过两次的，理由要连着看：
+        第一次加它，是因为它上面那行（世界名）比下面那行（标签）高 10px，
+        链接"上宽下窄"看着没居中 —— 补 2.6u 让上下各 35px。
+        后来世界名和标签**都只在观察模式出现**了（设置模式全收起），
+        设置模式里链接上下都没有东西，这个下边距就变成了单纯的下留白 ——
+        实测 17px 上 / 13px 下，比对称的 17/1 顺眼得多，所以**留着没撤**。
+
+     ⚠️ 要动它的话，两个模式都要看一眼：
+        设置模式（上下没别的行）和观察模式（链接被 .setup-only 藏起来）。
+        改完跑 `node _wiring_test.js`，第 17 节有一条钉着"下 > 上"。 */
+  margin: calc(var(--u) * 0.3) 0 calc(var(--u) * 2.6);
+  padding: calc(var(--u) * 1.0) calc(var(--u) * 2.6);
+  line-height: 1.45;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: calc(var(--u) * 3.4);
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;          /* 字距会在末尾多留一道，缩回来才是真居中 */
+  text-decoration: underline;
+  text-underline-offset: 0.34em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.18s ease;
+}
+
+.info-create:active {
+  color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   编年史（文明阶段）
+   ═══════════════════════════════════════════════════════════════
+   世界走到文明之后，这块开始逐条写出一份历史。
+
+   ⚠️ 它和别的浮层不一样，**不是整屏浮层** ——
+      它插在 .app 的竖向排列里，夹在星球和阶段条之间。
+      因为玩家要一边看着那颗球，一边读它的历史。
+
+   ⚠️ 高度是**算着给的**。竖屏一共约 178u 可用，
+      所有块加起来必须留在里面 —— 超了的话 .stage 会被压到
+      min-height 以下，星球就挤没了（这是踩过的坑）。
+      现在这一块占约 30u，总预算还剩一点余量。
+      真要加高，先量一遍再说。
+
+   ⚠️ 正文那层是滚动容器：**必须有固定高度**（或 max-height），
+      没有的话 overflow-y: auto 不生效，内容会把布局撑破。
+   ═══════════════════════════════════════════════════════════════ */
+/* ★ 2026-09-15：从「备忘录卡片」改成「观测日志」
+     圆角归零 + 冷蓝细边框 + 更实的底色（原来 0.035 太透，像一张纸；
+     现在压在星球上面更像一块仪表面板）。 */
+.chronicle {
+  flex: 0 0 auto;
+  margin: calc(var(--u) * 2.6) var(--pad) 0;
+  padding: calc(var(--u) * 2.4) calc(var(--u) * 3);
+  border: var(--line) solid var(--panel-line);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  text-align: left;
+}
+
+.chronicle-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(var(--u) * 2);
+  padding-bottom: calc(var(--u) * 1.4);
+  border-bottom: var(--line) solid var(--hair);
+}
+
+/* 文明自己的名字 —— 这份编年史是"谁"的 */
+.chronicle-name {
+  font-size: calc(var(--u) * 3.1);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 第几纪。随编年史进度变 */
+.chronicle-era {
+  flex: 0 0 auto;
+  font-size: calc(var(--u) * 2.5);
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+}
+
+.chronicle-body {
+  height: calc(var(--u) * 20);
+  overflow-y: auto;
+  margin-top: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 2.8);
+  line-height: 1.72;
+  /* 滚动时不带惯性回弹，免得手机上滑过头 */
+  overscroll-behavior: contain;
+
+  /* ★ 2026-09-16：滚动条改细、改成冷的（用户报"像 iOS 备忘录"）
+     —— 这一半是 Firefox / 新标准写法，另一半在下面（::-webkit-scrollbar）。 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 168, 232, 0.25) transparent;
+}
+
+/* ── 滚动条：细 + 冷蓝（2026-09-16 加）─────────────────────────────
+
+   ⚠️ 原来是浏览器默认那条**粗的灰白滚动条** —— 一眼像 iOS 备忘录。
+      用户报的就是这个。
+
+   ⚠️⚠️ **不能藏**（`overflow: hidden` / `scrollbar-width: none`）——
+      玩家要**回看历史**，滚动条是"这下面还有东西"的唯一提示。
+      只能改细、改色。
+
+   ⚠️ `width: 4px` 是**写死的像素**，故意没走 `--u`：
+      滚动条是**系统控件**，不该跟着版心缩放 —— 跟着缩的话，
+      360px 手机上会细到 2.9px，手指捏不住。
+      **4px 是"还捏得住"的下限。**
+
+   ⚠️⚠️ 色值 `rgba(79, 168, 232, …)` 就是 `--accent` 的 RGB。
+      **改 `--accent` 的话这几行要跟着改。**
+      这个坑**没有机器守着**，所以写清楚在这里：
+      想让它自动跟着 `--accent` 走是不行的 ——
+      `::-webkit-scrollbar-thumb` 只认一小撮属性（background / border /
+      border-radius 那几个），`opacity` **不在里面**，
+      `var(--accent)` + `opacity: 0.25` 会**静默失效**变成全不透明，
+      而界面看着"也能用"，只有玩家觉得刺眼。
+
+   ⚠️ 两套都要写：小工具容器是 Chromium 系的 WebView（认 `::-webkit-scrollbar`），
+      但不写 `scrollbar-width` 的话，Firefox 和将来换内核就是默认粗条。 */
+.chronicle-body::-webkit-scrollbar {
+  width: 4px;
+}
+.chronicle-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chronicle-body::-webkit-scrollbar-thumb {
+  background: rgba(79, 168, 232, 0.25);
+  border-radius: 0;   /* 直角，和整套调性一致 */
+}
+.chronicle-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(79, 168, 232, 0.45);
+}
+
+/* ★ P2#19：编年史行**逐条淡入**（2026-09-16 加）
+
+   ⚠️⚠️ 必须限制在 `.chronicle-body` 这一层，**不能写在 `.chron-row` 上** ⚠️⚠️
+      记录页（`#record-body`）也是一次性铺几十行 `.chron-row`，
+      不限定的话，打开记录页会**整片闪一下**（几十行同时淡入）。
+
+   ★ 为什么这样写就够了、不用 JS 加类：
+      面板是**只追加、不重画**的（见 app.js 的 syncChronicle）——
+      CSS 动画在元素**刚进 DOM 时跑一次**，正好就是"这一行刚写出来"那一刻。
+      整块重画的话这条会失效（每帧全部重放），
+      但那条路本来就被性能问题堵死了。
+
+   ⚠️ 同一个瞬间来两行（小事件 + 正文）的话，它们会**一起淡入**。
+      实测这种情况不多（格子预算是按时间发的），先不为了它加 JS 错峰。 */
+.chronicle-body .chron-row {
+  animation: chron-in 0.3s ease;
+}
+
+@keyframes chron-in {
+  from { opacity: 0; transform: translateY(calc(var(--u) * 0.8)); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── 编年史里六种行，长得必须不一样 ──
+   ⚠️ 玩家要能一眼分出"这是发生过的事"和"这是不好的兆头"。
+      分不出来的话，那个"没有压力条、只看征兆"的设计就废了。
+
+   ★★ 2026-09-15：六个项目符号（· — ▸ ◆）全去掉，换成**左侧色条**。
+       理由：`·` `—` 那种读起来是 Word 的项目符号；而色条是**日志 / 终端**
+       的做法 —— 一行一条，左边一条颜色带，信息靠颜色分层，不靠符号。
+       ⚠️ 文字颜色一个都没动（用户拍板：六色先不动）。
+
+   ⚠️⚠️ 这里的颜色是**语义色，不跟着主色走** ⚠️⚠️
+       尤其是 `deed`（金）和 `act`（冷白）—— 它们是**一对**：
+         deed = 生灵自己的决定     act = 观察者出手
+       合并或者换成同一个色系，"谁决定的"这件事在界面上就消失了，
+       而那正是这一整套设计的支点。
+       （★ 2026-09-15 主色从暖金换冷蓝时，批量改名差点把 deed 一起
+         换成冷蓝 —— 所以现在给它单独立了一个变量 `--deed`。） */
+.chron-row {
+  display: block;
+  padding-left: calc(var(--u) * 1.8);
+  border-left: 2px solid transparent;
+}
+
+/* ① 历史行：正常色 —— 最弱的一条带 */
+.chron-row.line {
+  color: rgba(216, 220, 228, 0.82);
+  border-left-color: rgba(216, 220, 228, 0.16);
+}
+
+/* ② 征兆：暗红 + 斜体 —— 唯一带红的，一眼认得出"这是坏兆头"。
+      它是观察者看到的现象，不是系统提示 —— 所以不用感叹号、不用图标。 */
+.chron-row.omen {
+  color: rgba(214, 148, 138, 0.92);
+  font-style: italic;
+  border-left-color: rgba(214, 148, 138, 0.55);
+}
+
+/* ③ 他们的决定：金色。
+      ⚠️ 2026-09-13 改成流式之后，这一行**不是玩家写的**了 ——
+         小事件由生灵自己挑，玩家只是读到它（见 core/evolution.js
+         的 resolveSmall）。玩家真正下笔的是下面 ⑤ 的 `act`。
+         这两种颜色**必须分得开**，不然玩家分不清哪一笔是自己写的。 */
+.chron-row.deed {
+  color: var(--deed);
+  border-left-color: rgba(240, 192, 96, 0.55);
+}
+
+/* ④ ★ 小事件的抬头行：「瘟疫爆发 · 倾力救治」
+      ⚠️ 它**不改数值**，也不暂停 —— 就是流过去的一行。
+         所以它要比 `deed` 弱一点：deed 是"他们做的决定"，
+         这一行只是"发生了什么事 + 他们怎么应对"的名字牌。
+      ⚠️ 和 ⑤ 的 `act` 长得完全不一样 —— 那一条是玩家下的手。 */
+.chron-row.event {
+  color: rgba(240, 240, 250, 0.96);
+  font-weight: 600;
+  border-left-color: rgba(240, 240, 250, 0.45);
+}
+
+/* ⑤ ★★ 观察者出手：「上升停止了。此后没有人再提这件事」
+      ⚠️ 这是整份记录里**唯一由玩家下笔**的那些行（大事件）。
+         冷白色 —— 和金色的 `deed`（他们自己的决定）刻意拉开，
+         一眼看得出"这一笔是我写的"。
+      ⚠️ 别把它和 `deed` 合并。合并了的话，"谁决定的"这件事
+         在界面上就消失了 —— 而那正是这一整套设计的支点。 */
+.chron-row.act {
+  color: #A8D8F0;
+  border-left-color: rgba(168, 216, 240, 0.70);
+}
+
+/* ⑥ 纪元分隔标题（第一纪 … 第四纪）——
+      居中、加字距、上面一条横线，像一本编年史翻了一页。
+      ⚠️ 它解决的是"看不出时间在往前走"—— 没有它，整份记录就是
+         一串平铺的句子，玩家不知道已经过了多久。 */
+.chron-row.era {
+  margin: calc(var(--u) * 2.2) 0 calc(var(--u) * 0.6);
+  padding-top: calc(var(--u) * 1.4);
+  border-top: var(--line) solid var(--hair);
+  font-size: calc(var(--u) * 2.5);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+/* 第一条纪元标题在最上面 —— 不用再来一条横线 */
+.chron-row.era:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   文明阶段的界面形态（body 上的 civ-on）
+   ═══════════════════════════════════════════════════════════════
+   走到文明之后，界面的大头要让给**文字**：
+
+     · 元素栏收起来 —— 文明阶段不需要再往地表投东西了
+     · 星球缩小 —— 它变成"背景里的那颗球"，不再占主位
+     · 编年史长高 —— 从 20u 涨到 46u，可见行数从 3~4 行变成 10 行以上
+
+   这三条是一起动的：腾出来的空间全给编年史，总量仍然是原来那些，
+   不会把 .stage 挤到 min-height 以下（那样星球会整个消失 —— 踩过这个坑）。
+
+   ⚠️ civ-on 这个类由 app.js 的 setCivUI() 加/去，
+      而且必须和 mode-xxx 一起拼（见 app.js 的 applyBodyClass）——
+      两边都写 document.body.className 的话会互相覆盖。
+   ═══════════════════════════════════════════════════════════════ */
+body.civ-on .palette-panel { display: none; }
+
+/* ── 星球：从"抢剩余空间"改成"固定一小块" ──
+   ⚠️ 这里不能只改 min-height。.stage 本来是 flex:1 ——
+      收起元素栏腾出来的空间会**全被它吃掉**，星球反而比原来更大
+      （第一版就是这么写的，正好和"缩小"相反）。
+      改成 flex:0 0 auto + 固定高度，它才真的变小。 */
+body.civ-on .stage {
+  flex: 0 0 auto;
+  height: calc(var(--u) * 30);
+  min-height: 0;
+}
+
+/* ── 编年史：吃掉剩下的**全部**空间 ──
+   这样不管屏幕多高多矮，文字区永远是最大的那一块。 */
+body.civ-on .chronicle {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body.civ-on .chronicle-body {
+  flex: 1 1 auto;
+  height: auto;                          /* 覆盖上面的固定 20u */
+  min-height: calc(var(--u) * 20);       /* 但也不许被压得比 20u 还矮 */
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   两种模式
+   ═══════════════════════════════════════════════════════════════
+     设置模式 mode-setup —— 调参数，然后点【演化】
+     观察模式 mode-watch —— 滑杆锁死，专心看世界变化
+
+   切换方式：改 body 上的 class 就行，不用一个个去操作元素。
+   ═══════════════════════════════════════════════════════════════ */
+body.mode-setup .watch-only { display: none; }
+body.mode-watch .setup-only { display: none; }
+
+/* ── 控制面板：本源滑杆 / 只读数值 / 倍速按键 ── */
+.panel {
+  flex: 0 0 auto;
+  padding: 0 var(--pad);
+}
+
+/* ── 观察模式的本源数值（只读）──
+   滑杆藏起来了，但数值留着 —— 看着它一点点变化，
+   本身就是"世界在演化"的证据。
+
+   ★ 2026-09-15：同一个 `.readout` 里现在住着**两批数**，
+     靠下面那两条规则按阶段切换（见 app.js 的 buildReadout）：
+       `.pre-civ`  四个本源 + 光暗 —— 文明之前
+       `.civ-only` 四个属性       —— 走到文明之后顶替上去
+     ⚠️ 两批都常驻 DOM，只是 display 不同 —— 别改成"按阶段重建"。 */
+.readout {
+  display: flex;
+  gap: calc(var(--u) * 1);
+  padding: calc(var(--u) * 1.6) 0 calc(var(--u) * 0.4);
+}
+
+.readout .civ-only { display: none; }
+body.civ-on .readout .civ-only { display: block; }
+body.civ-on .readout .pre-civ  { display: none; }
+
+.readout-item {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+
+.readout-label {
+  display: block;
+  font-size: calc(var(--u) * 2.7);
+  color: var(--text-dim);
+}
+
+/* 读数 + 底下那条数据线
+   ★ 2026-09-15（P0#8）：纯数字 → 数字 + 细线 + 填充。
+
+   ⚠️ 关键是**不增高**：这条线画在数字**下面已有的那点空隙里**
+      （padding-bottom 1.1u ≈ 5px，线占 2px）。
+      另起一行画 bar 会吃掉竖向空间，而竖向空间是从星球那里扣的
+      —— 见 .chronicle 上面那段"高度是算着给的"。
+
+   ⚠️ 填充比例来自 JS 喂的 `--fill` 自定义属性（CSS 读不到数字）。
+      没喂的时候退回 0 —— 不会画成满格。 */
+.readout-value {
+  display: block;
+  position: relative;
+  margin-top: calc(var(--u) * 0.3);
+  padding-bottom: calc(var(--u) * 1.1);
+  font-size: calc(var(--u) * 4.2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.readout-value::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+/* 填充那一截：用渐变画，左半到 --fill 为止是冷的强调色 */
+.readout-value::before {
+  content: '';
+  position: absolute;
+  left: 12%;
+  bottom: 0;
+  height: 2px;
+  /* ⚠️ 只能「百分比 × 数字」**不能**「百分比 × 百分比」——
+     轨道两端各留 12%，所以中间是 76% 宽，换算成系数 0.76。
+     （写成 calc(76% * var(--fill)) 是非法 CSS，整条声明会被丢掉，
+       表现是"线一直在最左不动"，不报错。）*/
+  width: calc(var(--fill, 0%) * 0.76);
+  background: var(--accent);
+  opacity: 0.75;
+  transition: width 0.3s ease;   /* P2#16：数值变化时平滑 */
+  z-index: 1;
+}
+
+/* ── 元素栏上面那行说明 ★ 2026-09-16 加 ──
+   用户拍板的文案（乙案）：常驻两行，选中元素也不会被顶掉。
+
+   ⚠️ 它和下面那句 `.palette-hint` 是**分工**，不是重复：
+       这一行说"你可以不出手"，下面那行说"要出手怎么出手"。
+
+   ⚠️ 一行最多放约 **32 个汉字**，而且**和屏幕宽度无关** ——
+      容器宽 92u（100u 减去 .panel 两侧各 4u 的内边距），字号 2.8u，
+      92 ÷ 2.8 ≈ 32.9。两个数都跟着 --u 一起缩放，所以这个上限恒定。
+      ⚠️ 它只有两行的余量，**别往里加句子** —— 加长了会在窄屏上偷偷折成
+         三行，而这一块的高度是"算着给的"，多出来的会从星球那块扣
+         （见 .stage 的 min-height，那是最后一道底线）。 */
+.palette-note {
+  padding-top: calc(var(--u) * 1.4);   /* 和 .palette / .speeds 同一个间距节奏 */
+  text-align: center;
+  font-size: calc(var(--u) * 2.8);     /* 和 .palette-hint 同号 */
+  line-height: 1.4;                    /* 写死，不留给浏览器 default */
+  color: var(--text-dim);
+}
+
+/* ── 基础元素栏 ── */
+.palette {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);   /* 四列两行，比挤成一行好按 */
+  grid-gap: calc(var(--u) * 1.5);            /* Chrome 61 只认这个旧名；现代浏览器照样认，等价 */
+  padding: calc(var(--u) * 1.4) 0 0;
+}
+
+.el-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 0.6);
+  padding: calc(var(--u) * 1.5) calc(var(--u) * 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: calc(var(--u) * 2.8);
+  cursor: pointer;
+  /* 选中时 JS 会把边框和文字改成元素自己的颜色，所以要能过渡 */
+  transition: background 0.15s ease, border-color 0.15s ease,
+              color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* ⚠️ 按下反馈不在这儿 —— 它和另外三个按钮走的是**同一条合并规则**
+      （P2#17，在下面 `.btn:active` 那一段）。
+      这里原来有一条 `.el-btn:active { background: ... }`，
+      2026-09-16 换成边框闪之后删掉了。 */
+
+/* 元素颜色的小圆点（颜色由 JS 内联设置） */
+.el-dot {
+  width: calc(var(--u) * 2.8);
+  height: calc(var(--u) * 2.8);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+}
+
+/* 元素栏下面那行小字：没选元素时是操作说明，选了之后显示元素的作用 */
+.palette-hint {
+  min-height: 1.6em;
+  padding-top: calc(var(--u) * 1);
+  text-align: center;
+  font-size: calc(var(--u) * 2.8);
+  color: var(--text-dim);
+}
+
+/* ── 倍速按键 ── */
+.speeds {
+  display: flex;
+  gap: calc(var(--u) * 1.8);
+  padding: calc(var(--u) * 1.2) 0 0;
+}
+
+.speed-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: calc(var(--u) * 1.8) 0;
+  border: 1px solid var(--btn-line);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: var(--btn-bg);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: calc(var(--u) * 3.1);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease,
+              border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* 当前选中的倍速：金色 */
+.speed-btn.active {
+  border-color: rgba(79, 168, 232, 0.55);
+  color: var(--accent);
+  background: rgba(79, 168, 232, 0.10);
+}
+
+/* 一行 = 名字 + 读数条 + 数值 */
+.row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2.6);
+  padding: calc(var(--u) * 1.1) 0;
+}
+
+.row-name {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 17);
+  font-size: calc(var(--u) * 3.1);
+  color: var(--text-dim);
+}
+
+.row-val {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 11);
+  text-align: right;
+  font-size: calc(var(--u) * 3.1);
+  font-variant-numeric: tabular-nums;   /* 数字等宽，跳动时不会左右晃 */
+  color: var(--text);
+}
+
+/* ── 本源读数条（**不是滑杆**）──
+   ★ 2026-09-17 大改：原来是 `<input type="range">` + `::-webkit-slider-*`
+     伪元素那两套写法（webkit / moz 各一份）。**整段删掉了。**
+
+   ⚠️ 为什么删：那种写法画出来的东西**长得和能拖的滑杆一模一样**
+      （蓝填充条 + 白色小方块）—— 审核员伸手去拖、拖不动，
+      判了个「小工具功能缺陷」。光把指针事件关掉救不了：
+      外观还在骗人，手指还是会去按。
+
+   ⚠️ 现在是一条**纯图形**：底槽 + 按数值填充的亮条，
+      **没有白色小方块**。「能拖」全靠小方块暗示，
+      去掉它 = 一条读数，天经地义不能拖。
+
+   ⚠️ 原来还有 `pointer-events: none` 和 `cursor: default` 两行，
+      现在**不需要了** —— `<span>` 本来就不可交互，没什么好关的。
+      「不许用 `<input>` 再换回来」这条由 `_wiring_test.js` 守着。
+
+   ⚠️ 填充比例靠 JS 喂的 `--fill`（`syncEssenceUI` 里设）——
+      CSS 读不到世界本源的数值。
+      没喂的时候退回 0%，不会画成满格（`.row-bar` 是底槽，`::after` 才是亮条）。 */
+.row-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(var(--u) * 0.7);   /* 4px @ 560px 宽 —— 细得像一条测量刻度 */
+  background: rgba(255, 255, 255, 0.14);
+  position: relative;
+}
+/* 亮条：从左边开始，占多少宽就是多少值。
+   ⚠️ 用 `width` 而不是 `transform: scaleX()` —— 后者会把 4px 的边也缩放掉。 */
+.row-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--fill, 0%);
+  background: var(--accent);
+}
+
+/* ── 演化阶段指示条 ──
+   ★ 2026-09-15 从「面包屑」改成「进度电路」：
+       六段文字 + 各自一截短线  →  **一条贯通的细线 + 六个圆点**
+
+     ⚠️ 关键在 `gap: 0` —— 原来每段之间留 1.2u 的缝，
+        六条 border-top 就断成六截，读起来像六个独立标签（"面包屑"）。
+        缝去掉之后六段首尾相接，那条线就**真正贯通**了，
+        间距改由每一段自己的内边距撑开。 */
+.stages {
+  flex: 0 0 auto;
+  display: flex;
+  padding: var(--gap) var(--pad) 0;
+}
+
+.stage-seg {
+  flex: 1 1 0;
+  position: relative;
+  text-align: center;
+  font-size: calc(var(--u) * 2.5);
+  line-height: 1.7;
+  padding-top: calc(var(--u) * 1.9);           /* 给圆点留位置 */
+  color: var(--text-faint);
+  border-top: var(--line) solid rgba(255, 255, 255, 0.10);
+  transition: color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 圆点：骑在那条细线上（负 margin 把它往上提半格） */
+.stage-seg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: calc(var(--u) * 1.1);
+  height: calc(var(--u) * 1.1);
+  margin-top: calc(var(--u) * -0.55);
+  margin-left: calc(var(--u) * -0.55);
+  background: var(--text-faint);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 已经走过的阶段：点变亮 */
+.stage-seg.done {
+  color: var(--text-dim);
+  border-top-color: rgba(216, 220, 228, 0.32);
+}
+.stage-seg.done::before {
+  background: rgba(216, 220, 228, 0.55);
+}
+
+/* 当前所在的阶段：冷蓝点 + 呼吸 */
+.stage-seg.active {
+  color: var(--accent);
+  border-top-color: var(--accent-soft);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.stage-seg.active::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 calc(var(--u) * 0.7) rgba(79, 168, 232, 0.18);
+}
+
+/* ★ 脉冲：一圈方波从点上往外荡开，1.5 秒一轮（P2#15，2026-09-16 加）
+
+   ⚠️ 用 `transform: scale` 扩散，**不用 `box-shadow` 扩散** ——
+      前者走合成层（手机上是 GPU 的事），后者每一帧都要重画阴影。
+   ⚠️ 尺寸和位置**必须和上面 `::before` 那几行一模一样**（宽高 + 两个负 margin），
+      不然圈不是从点心里长出来的，会偏心。
+   ⚠️ 边框会**跟着一起放大**（1px × 3.2 ≈ 3.2px），所以看起来是"边荡开边变粗"。
+      想要"细圈"的话得换成"动画 width/height"，但那不是 GPU 加速的，
+      手机上是每帧重排 —— 不值得。 */
+.stage-seg.active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: calc(var(--u) * 1.1);
+  height: calc(var(--u) * 1.1);
+  margin-top: calc(var(--u) * -0.55);
+  margin-left: calc(var(--u) * -0.55);
+  border: var(--line) solid var(--accent);
+  pointer-events: none;            /* 别挡住底下那条阶段条的点击 */
+  animation: stage-pulse 1.5s ease-out infinite;
+}
+
+@keyframes stage-pulse {
+  0%   { transform: scale(1);   opacity: 0.80; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* ── 底部按钮 ── */
+.bottombar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: calc(var(--u) * 2.4);
+  padding: var(--gap) var(--pad) var(--pad);
+}
+
+/* ⚠️⚠️ 这里 2026-09-14 试过一版"按钮一行 + 【观察记录】单独一行文字链"，
+   已经退回去了 —— 退回去的理由记在这儿，别再走一遍：
+
+   那一版让整个底部多占 25px，实测**星球区矮 19~33px**（视口高度不同）。
+   我当时为了把这 19px 抢回来，把 .bottombar 的底边距从 4u 收到了 2u ——
+   结果【观察记录】和上面的按钮只隔 5px、离屏幕底只有 10px，
+   夹在中间像"按钮的注释"，用户一看就说违和。
+
+   ★ 现在这版是对的那条路：**不另起一行，直接和另两颗并排**
+     —— 用一行的宽度换掉一整行的高度，星球一点都不会变矮。
+
+   ⚠️ 也没有"下面再加一行"这回事了，所以底边距保持原来的 4u。 */
+
+.btn {
+  flex: 1 1 0;                  /* 三个等宽平分，不用写死宽度 */
+  min-width: 0;
+  padding: calc(var(--u) * 3.0) calc(var(--u) * 1);
+  border: 1px solid var(--btn-line);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: calc(var(--u) * 3.5);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* 主按钮（演化）：金色描边，一眼能认出 */
+.btn-main {
+  border-color: rgba(79, 168, 232, 0.55);
+  color: var(--accent);
+}
+
+/* ★★ 按下反馈：**边框闪一下**（P2#17，2026-09-16 改）★★
+
+   ⚠️ 原来是「缩一点点 + 底色变亮」，用户要求换成边框式 ——
+      更贴「观测站」的调性（按下的是个开关，不是软按钮）。
+
+   ★★ 用**外圈 box-shadow 假装边框**，不改 `border-color` ★★
+      两个原因，第二个是硬约束：
+        ① 外圈是"加"上去的，所以 `.btn-main` / `.speed-btn.active`
+           这种**本来边框就是冷蓝**的按钮一样看得出闪（改 border-color 的话
+           从 0.55 透明度变到 1.0，几乎看不出来）
+        ② ⚠️ `.el-btn` 的边框被 **JS 写了内联样式**（选中元素时染成元素自己的颜色，
+           见 app.js 的 `b.el.style.borderColor = ...`）——
+           内联样式优先级比样式表高，写 `border-color` 会**静默失效**，
+           元素按钮上一点反应都没有，而且不报错
+
+   ⚠️ 四个按钮类型都走这一套（`.btn` / `.el-btn` / `.speed-btn` / `.choice-opt`），
+      改一个记得看另外三个 —— 只改一半的话，界面上会出现两种按下手感。 */
+.btn:active,
+.el-btn:active,
+.speed-btn:active,
+button.choice-opt:active {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* 电脑上鼠标悬停给点反馈（真机上没有 hover，所以关键操作不能只靠它） */
+@media (hover: hover) {
+  .btn:hover { background: rgba(255, 255, 255, 0.11); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   命名弹窗
+   ═══════════════════════════════════════════════════════════════
+   第一次点【演化】时弹出，让玩家给这颗世界起个名字。
+
+   和结局面板同一套路（都在 .app 外面），所以：
+     · 不受 .app 的 max-width 限制，能真正整屏盖住
+     · 不受 .app 的 pointer-events: none 影响，输入框和按钮点得到
+
+   z-index 比结局面板高一级 —— 万一两个同时开着，命名框压在最上面。
+   ═══════════════════════════════════════════════════════════════ */
+.naming {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 25;   /* 最上面一层，见上面那张层级表 */
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* ⚠️ 底部多留一截（5 倍内边距）→ 卡片整体往上偏。
+     手机一 focus 输入框，软键盘会从底下顶上来；
+     卡片居中放的话正好被键盘挡住，偏上一点才看得见。 */
+  padding: var(--pad) var(--pad) calc(var(--pad) * 5);
+
+  background: rgba(7, 7, 12, 0.86);
+
+  /* ══ 淡入淡出：visibility + opacity，**不用 hidden 属性** ══
+     （`display: none` 做不了过渡动画，所以藏起来靠 visibility。）
+
+     ⚠️⚠️ **`visibility` 的过渡要写成「0 秒 + 延迟」，不能写成「0.35s」** ——
+        2026-09-17 修。原来写的是 `transition: opacity .35s, visibility .35s`，
+        看起来对，实际有一个**致命副作用**：
+
+        `visibility` 是**离散**属性，过渡期间的值要么是起点、要么是终点。
+        写 `.35s` 的话，**刚加上 `.show` 的那一刻它还是 `hidden`** ——
+        而 `visibility: hidden` 的元素**浏览器不允许聚焦**。
+        于是下一行的 `elNameIn.focus()`（app.js 的 `showNaming`）**当场失败**，
+        手机软键盘不弹、推荐名也不全选。
+
+        改法就是**把「立刻变可见」明写出来**：
+          · 基础规则 → `visibility 0s linear 延迟`（**藏**的时候等淡出走完再收）
+          · `.show`   → `visibility 0s linear 0s`（**显**的时候立刻可见，能聚焦）
+        ⚠️ CSS 过渡取的是**变化之后**那条规则里的 transition 定义 ——
+           所以这两条必须**成对写**，只改一处不管用。
+
+     ⚠️ 另外 5 个浮层（`.civbirth` / `.choice` / `.ending` / `.archive` / `.record`）
+        是**同一个写法**，改动时一起改。 */
+
+  opacity: 0;
+  visibility: hidden;
+  /* ⚠️ 这条和下面 `.show` 那条必须**成对**改 —— 为什么写成「0 秒 + 延迟」，
+     见 .naming 那段长注释（**写错会让 focus() 失败、手机不弹软键盘**）。 */
+  /* ⚠️ 这条和下面 `.show` 那条必须**成对**改 —— 为什么写成「0 秒 + 延迟」，
+     见 .naming 那段长注释（**写错会让 focus() 失败、手机不弹软键盘**）。 */
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+}
+
+.naming.show {
+  opacity: 1;
+  visibility: visible;
+  /* ⚠️ 这条让"显示"变成**立刻可见** —— 少了它 focus() 会失败，见上面那段 */
+  transition: opacity 0.35s ease, visibility 0s linear 0s;
+}
+
+.naming-card {
+  width: 100%;
+  max-width: 430px;              /* = min(100%, 430px)：width 已是 100% —— 见文件头「Chrome 61」段 */
+  max-height: 100%;
+  overflow-y: auto;               /* 内容太长时卡片内部滚动，不撑破屏幕 */
+  padding: calc(var(--u) * 6) calc(var(--u) * 5);
+  border: 1px solid rgba(79, 168, 232, 0.34);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(18, 18, 26, 0.97);
+  text-align: center;
+}
+
+/* 小标题「为此界命名」：和结局卡片的「此界已成」同一套字距处理 */
+.naming-kicker {
+  font-size: calc(var(--u) * 3);
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--text-dim);
+}
+
+/* ── 输入框 ──
+   ⚠️ 必须显式打开 user-select。
+      body 上有 user-select: none（防止长按选中文字、弹出系统菜单），
+      这条会**继承进输入框**，导致手指没法拖光标、没法选中改字 ——
+      名字就只能一个字一个字删，非常难用。 */
+.naming-input {
+  width: 100%;
+  margin-top: calc(var(--u) * 4);
+  padding: calc(var(--u) * 2.6) calc(var(--u) * 2);
+  border: 1px solid var(--btn-line);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: calc(var(--u) * 5.2);
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-indent: 0.10em;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.naming-input:focus {
+  border-color: rgba(79, 168, 232, 0.55);
+  background: rgba(79, 168, 232, 0.08);
+}
+
+/* 万一名字被清空，占位符不要用金色（金色显得像已经填好了）*/
+.naming-input::placeholder {
+  color: rgba(138, 138, 150, 0.7);
+  font-weight: 400;
+}
+
+/* 「最多 8 个字」+【换一个】，一行两端对齐 */
+.naming-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 2.7);
+  color: var(--text-dim);
+}
+
+/* ──【换一个】/【返回】：做成"文字链"而不是按钮 ──
+   它们是次要操作，不该跟主按钮【开始演化】抢注意力。 */
+.naming-link {
+  padding: calc(var(--u) * 1) calc(var(--u) * 1.2);
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: calc(var(--u) * 2.7);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.naming-link:active { color: var(--accent); }
+
+@media (hover: hover) {
+  .naming-link:hover { color: var(--accent); }
+}
+
+.naming-go {
+  width: 100%;
+  max-width: none;                /* 覆盖 .btn 的平分宽度，让它独占一行 */
+  margin-top: calc(var(--u) * 4);
+}
+
+/* ⚠️ 必须写 width: fit-content。
+   button 默认是 inline-block，光写 display:block 的话宽度会撑满整张卡片，
+   于是【返回】变成一个横跨整卡片的巨大隐形点击区，极易误触。
+   fit-content 让它缩到文字那么宽，margin:auto 才能真正居中。 */
+.naming-back {
+  display: block;
+  width: fit-content;
+  margin: calc(var(--u) * 1.4) auto 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   文明诞生面板
+   ═══════════════════════════════════════════════════════════════
+   世界刚走到「文明」时弹出 —— 玩家等了一分多钟，就为了知道
+   这颗星球上长出了什么东西。所以面板的主角是**文明的名字**。
+
+   关掉之后世界才开始走文明发展期（60~120 秒）。
+   面板开着时世界是**冻着**的，不点【继续】就一直等。
+
+   z-index 18：夹在岔路口(15) 和结局面板(20) 之间。
+   实际上面板们不会同时开（诞生面板关掉后一分钟才可能出结局），
+   这个值是给"万一"留的。
+   ═══════════════════════════════════════════════════════════════ */
+.civbirth {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 18;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+
+  background: rgba(7, 7, 12, 0.88);
+
+  opacity: 0;
+  visibility: hidden;
+  /* 淡得比别的弹窗慢一点 —— 这是全游戏最值得"揭晓"的一刻 */
+  /* ⚠️ 这条和下面 `.show` 那条必须**成对**改 —— 为什么写成「0 秒 + 延迟」，
+     见 .naming 那段长注释（**写错会让 focus() 失败、手机不弹软键盘**）。 */
+  transition: opacity 0.6s ease, visibility 0s linear 0.6s;
+}
+
+.civbirth.show {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.6s ease, visibility 0s linear 0s;
+}
+
+.civbirth-card {
+  width: 100%;
+  max-width: 430px;              /* = min(100%, 430px)：width 已是 100% —— 见文件头「Chrome 61」段 */
+  max-height: 100%;
+  overflow-y: auto;
+  padding: calc(var(--u) * 7) calc(var(--u) * 5);
+  border: 1px solid rgba(79, 168, 232, 0.42);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(18, 18, 26, 0.97);
+  text-align: center;
+}
+
+.civbirth-kicker {
+  font-size: calc(var(--u) * 3);
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--text-dim);
+}
+
+/* 文明自己的名字 —— 整张卡片的主角 */
+/* ── 文明名：一个"看起来像大字、其实能改"的输入框 ──
+   ★ 2026-09-13 从 <div> 改成 <input>（玩家可以自己给文明起名了）。
+   ⚠️ 版式刻意和改之前**一模一样**（同字号、同居中、同金色）——
+      版式一变，这一屏就会比原来跳一下。
+   ⚠️ user-select: text 必须有：body 上是 user-select: none，会继承进来，
+      手机上就没法拖光标、没法选中改字。世界名那个输入框踩过同一个坑。 */
+.civbirth-name {
+  display: block;
+  width: 100%;
+  margin-top: calc(var(--u) * 2.5);
+  padding: 0 calc(var(--u) * 1) calc(var(--u) * 1.2);
+  border: none;
+  border-bottom: 1px solid rgba(79, 168, 232, 0.28);
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: calc(var(--u) * 7);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  text-align: center;
+  color: var(--accent);
+  user-select: text;
+  -webkit-user-select: text;
+  transition: border-bottom-color 0.25s ease;
+}
+
+/* 下面那条线是唯一的"这里能改"的提示 —— 点进去会亮起来 */
+.civbirth-name:focus {
+  outline: none;
+  border-bottom-color: rgba(79, 168, 232, 0.85);
+}
+
+.civbirth-name::placeholder {
+  font-weight: 400;
+  color: rgba(138, 138, 150, 0.7);
+}
+
+/* ⚡ 观测异常的记号（1% 的世界才有，app.js 控制显隐）。
+   ⚠️ 它**不在输入框里** —— 玩家的名字存在 world.civ.title，
+      记号放进去会被一起存下来（结局卡片上就成了「⚡ ⚡ 星海」）。 */
+.civbirth-egg {
+  margin-top: calc(var(--u) * 2.5);
+  font-size: calc(var(--u) * 3);
+  letter-spacing: 0.24em;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* 「最多 8 个字」+【换一个】。
+   ⚠️ 这里复用世界命名弹窗的两个类（.naming-limit / .naming-link）——
+      两处的次要操作长得一样，玩家不用重新认一次。 */
+.civbirth-namerow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 2.7);
+  color: var(--text-dim);
+}
+
+/* 四条信息：名称已在上面，这里是原型 / 特质 / 倾向 */
+.civbirth-rows {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.8);
+  margin-top: calc(var(--u) * 5.5);
+  text-align: left;
+}
+
+.civ-row-key {
+  font-size: calc(var(--u) * 2.6);
+  letter-spacing: 0.22em;
+  color: var(--text-dim);
+}
+
+.civ-row-val {
+  display: block;
+  margin-top: calc(var(--u) * 0.6);
+  font-size: calc(var(--u) * 3.6);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.civ-row-desc {
+  display: block;
+  margin-top: calc(var(--u) * 0.5);
+  font-size: calc(var(--u) * 2.7);
+  line-height: 1.6;
+  color: rgba(138, 138, 150, 0.95);
+}
+
+.civbirth-go {
+  width: 100%;
+  max-width: none;
+  margin-top: calc(var(--u) * 6);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   演化路线选择
+   ═══════════════════════════════════════════════════════════════
+   世界走到三条岔路口时弹出，问一句，按答案改变世界。
+
+   弹出时世界已经屏住呼吸了（闸门在 core/evolution.js 里），
+   所以这里不需要"暂停"逻辑 —— 只是把问题摆出来。
+
+   ┌── 四个浮层的层级（数字越大越靠上）────────────────┐
+   │  .naming   25   命名弹窗                          │
+   │  .ending   20   结局面板                          │
+   │  .civbirth 18   文明诞生面板                      │
+   │  .choice   15   岔路口选择 / 结果视图              │
+   │  .app       1   界面                              │
+   │  #world     0   星空画布                          │
+   └───────────────────────────────────────────────────┘
+   ⚠️ 为什么「文明诞生」(18) 要压在岔路口(15) 上面：
+      答完【文明】那道岔路口、玩家按了【继续】之后，「文明诞生」面板
+      紧接着就会弹出来，两个弹窗有 0.35 秒的重叠期。让诞生面板在上面，
+      看起来就是"选择卡翻了一面、成了诞生卡"。
+
+   ⚠️ 结局面板(20) 排在最上面是**保险**，不是当前真的会撞：
+      岔路口永远不直接触发结局 —— Choices.resolve 只返回 advance
+      或 civBirth，永远不返回 done（见 core/evolution.js 的 finishStage）。
+      留着是为了将来谁改了那边也不出事。
+   ═══════════════════════════════════════════════════════════════ */
+.choice {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 15;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+
+  background: rgba(7, 7, 12, 0.88);
+
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+}
+
+.choice.show {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.35s ease, visibility 0s linear 0s;
+}
+
+.choice-card {
+  width: 100%;
+  max-width: 430px;              /* = min(100%, 430px)：width 已是 100% —— 见文件头「Chrome 61」段 */
+  max-height: 100%;
+  overflow-y: auto;
+  padding: calc(var(--u) * 5) calc(var(--u) * 4);
+  border: 1px solid rgba(79, 168, 232, 0.34);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(18, 18, 26, 0.97);
+  text-align: center;
+}
+
+/* 小标题（「世界冷却完毕」）：和另外两个弹窗同一套字距处理 */
+.choice-kicker {
+  font-size: calc(var(--u) * 3);
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--text-dim);
+}
+
+/* 问句：这一步的主角 */
+.choice-question {
+  margin-top: calc(var(--u) * 1.8);
+  font-size: calc(var(--u) * 4.2);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--accent);
+}
+
+.choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2.2);
+  margin-top: calc(var(--u) * 4);
+}
+
+/* ── 一个选项 ──
+   两行：选项名 / 一句话说明。
+   ⚠️ **不预告好处和代价** —— 那两行改在答完之后的结果视图里给
+      （见下面的 .choice-result）。把得失写在题面上，
+      选择就从"凭对世界的理解做判断"变成"算一下哪个划算"了。
+   ⚠️ 左对齐 —— 中间对齐的话长短不一，两行会各自居中，读起来很乱。 */
+.choice-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--u) * 0.7);
+  width: 100%;
+  padding: calc(var(--u) * 3) calc(var(--u) * 3);
+  border: 1px solid var(--btn-line);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease,
+              box-shadow 0.15s ease;
+}
+
+/* ⚠️ `:active` / `:hover` 只给**按钮**（岔路口）——
+   2026-09-13 起文明事件的选项是 <div>（不可点），
+   给它们按下反馈和悬停高亮是在骗玩家"这个能点"。
+   ⚠️ 那条 `:active` 在 `.btn:active` 的合并规则里（P2#17，2026-09-16 改）。 */
+
+@media (hover: hover) {
+  button.choice-opt:hover { border-color: rgba(79, 168, 232, 0.45); }
+}
+
+/* ⚠️⚠️ 2026-09-13 删掉了一条样式：「他们选了这个」的高亮 ⚠️⚠️
+
+   原来小事件会弹出这一屏、把选项列出来、把**他们挑中的那条**高亮，
+   玩家看着（点不动）。改成流式之后**小事件根本不弹窗了** ——
+   他们的决定直接写进编年史（`▸` 抬头 + `✎` 那行金色）。
+   所以 `.choice-opt.picked` 和那条 `::after`（"（他们的选择）"）
+   一起成了死代码，删掉了。
+
+   ⚠️ 现在会走到这个弹窗的**只有玩家要做决定的两种**
+      （岔路口 / 大事件），所以选项**一律是可点的 <button>** ——
+      不能再有"做成按钮但点了没反应"的东西，那是骗人的。
+      `_wiring_test.js` 第 16 节守着这条。 */
+
+.choice-opt-label {
+  font-size: calc(var(--u) * 3.8);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.choice-opt-blurb {
+  font-size: calc(var(--u) * 2.8);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* 好处和代价：一绿一红。
+   ⚠️ 这两个类现在**只用在结果视图里**（.choice-result），不在选项按钮上 ——
+      玩家已经下过注了，这时读的是结果，不是题面。
+   为什么值得单独上色：这一步的核心就是"有得有失"，
+   两行都得让玩家一眼扫到、并且分得清哪行是赚哪行是赔。
+   （类名还叫 choice-opt- 是因为它们本来就是给选项写的，
+     结果视图直接复用配色，没有另起一套。） */
+.choice-opt-gain {
+  font-size: calc(var(--u) * 2.7);
+  line-height: 1.55;
+  color: var(--data);
+}
+
+.choice-opt-cost {
+  font-size: calc(var(--u) * 2.7);
+  line-height: 1.55;
+  color: var(--warn);
+}
+
+/* 「他们是「征战」型的生灵。」——
+   文明事件那一屏的收尾句，把"他们为什么选了这个"接上。
+   岔路口走不到这里（app.js 每次都把它清空），所以 `:empty` 直接藏掉。 */
+.choice-why {
+  font-size: calc(var(--u) * 2.7);
+  line-height: 1.55;
+  color: var(--accent);
+}
+.choice-why:empty { display: none; }
+
+/* ── 结果视图 ──
+   和 .choice-options 互斥，由 hidden 属性切换 ——
+   答完选项后**原地换屏**，不新开浮层、不加动画。
+   为什么用 hidden 而不是淡出：opacity:0 的按钮照样能点，藏不住。 */
+.choice-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--u) * 1.6);
+  margin-top: calc(var(--u) * 4);
+}
+
+/* ⚠️ 必须写 width:100% —— .btn 靠 flex: 1 1 0 平分宽度，
+   而 .choice-card 是**块**容器（没有 display:flex），flex 属性不生效，
+   不写的话按钮会缩成 inline-block 的小不点。
+   同款写法见 .civbirth-go。 */
+.choice-go {
+  width: 100%;
+  max-width: none;
+  margin-top: calc(var(--u) * 5);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   结局面板
+   ═══════════════════════════════════════════════════════════════
+   世界走到「文明」时浮现，像一份结案报告。
+
+   注意它在 .app **外面**（跟画布、.app 平级），所以：
+     · 不受 .app 的 max-width 限制，能整屏盖住
+     · 不受 .app 的 pointer-events: none 影响，按钮点得到
+   ═══════════════════════════════════════════════════════════════ */
+.ending {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;   /* 要压在岔路口选择(15) 上面，见上面那张层级表 */
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+
+  /* 压暗背后的世界，让卡片跳出来 */
+  background: rgba(7, 7, 12, 0.86);
+
+  /* ⚠️ 用 visibility + opacity 做淡入，**不用 hidden 属性** ——
+     display:none 的元素没法做过渡动画，会"啪"地一下出现。 */
+  opacity: 0;
+  visibility: hidden;
+  /* ⚠️ 这条和下面 `.show` 那条必须**成对**改 —— 为什么写成「0 秒 + 延迟」，
+     见 .naming 那段长注释（**写错会让 focus() 失败、手机不弹软键盘**）。 */
+  /* ⚠️ 这条和下面 `.show` 那条必须**成对**改 —— 为什么写成「0 秒 + 延迟」，
+     见 .naming 那段长注释（**写错会让 focus() 失败、手机不弹软键盘**）。 */
+  transition: opacity 0.45s ease, visibility 0s linear 0.45s;
+}
+
+.ending.show {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.45s ease, visibility 0s linear 0s;
+}
+
+.ending-card {
+  width: 100%;
+  max-width: 430px;              /* = min(100%, 430px)：width 已是 100% —— 见文件头「Chrome 61」段 */
+  max-height: 100%;
+  overflow-y: auto;               /* 内容太长时卡片内部滚动，不撑破屏幕 */
+  padding: calc(var(--u) * 6) calc(var(--u) * 5);
+  border: 1px solid rgba(79, 168, 232, 0.34);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(18, 18, 26, 0.97);
+  text-align: center;
+}
+
+/* 小标题「此界已成」：字距拉开，做出"印章"的感觉 */
+.ending-kicker {
+  font-size: calc(var(--u) * 3);
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;   /* 抵消字距在末尾多出来的空白，让文字真正居中 */
+  color: var(--text-dim);
+}
+
+/* ── 分节：── 星球 ── / ── 文明 ── / 存续 ──
+   2026-09-13 改版：从"一张印章卡"改成"一份观测记录"。
+   用户给的模版是分节 + 标签值行的文档体，所以加了这一层。 */
+.end-sec {
+  margin-top: calc(var(--u) * 3.4);
+}
+
+/* 节标题：字距拉开 + 上下细线，做出"记录里的分隔条"感 */
+.end-sec-title {
+  font-size: calc(var(--u) * 2.5);
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  color: rgba(138, 138, 150, 0.78);
+}
+
+/* 一行「标签　值」—— 标签暗、值亮 */
+.end-row {
+  margin-top: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 3.4);
+  color: var(--text);
+}
+
+.end-k {
+  margin-right: calc(var(--u) * 1.6);
+  font-size: calc(var(--u) * 2.7);
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+
+.end-v {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+/* 标签下面那句摘要（评定说明 / 命运说明）——
+   比正文小一档、暗一档，是"注释"的位置 */
+.end-line {
+  margin: calc(var(--u) * 1.1) auto 0;
+  max-width: 92%;
+  font-size: calc(var(--u) * 2.8);
+  line-height: 1.7;
+  color: rgba(232, 232, 236, 0.72);
+}
+
+/* 「编年史已归档。」—— 收尾那一行，暗、小、字距宽 */
+.end-foot {
+  margin-top: calc(var(--u) * 4);
+  font-size: calc(var(--u) * 2.5);
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  color: rgba(138, 138, 150, 0.8);
+}
+
+/* ── 物种信息块：名称 / 原型 / 特质 / 倾向 ──
+   没有文明时整块留空，但高度占着，版式不会跳 */
+.ending-civbox {
+  min-height: 1.5em;
+  margin-top: calc(var(--u) * 3.5);
+}
+
+/* 文明自己的名字 —— 结局面板上最"有故事感"的一行 */
+.ending-civname {
+  font-size: calc(var(--u) * 4.6);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-indent: 0.1em;
+  color: var(--text);
+}
+
+/* 四行信息，窄屏会自动换行 */
+.ending-civrows {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(var(--u) * 0.9) calc(var(--u) * 2.4);
+  margin-top: calc(var(--u) * 1.8);
+  font-size: calc(var(--u) * 2.8);
+  color: var(--text-dim);
+}
+
+/* 行里的「标签 值」用 span 拼，值比标签亮一档 */
+.ending-civrows b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* 传记：整张卡片唯一左对齐的地方 —— 一段文字左对齐才好读 */
+.ending-bio {
+  margin: calc(var(--u) * 4) 0 0;
+  font-size: calc(var(--u) * 3.1);
+  line-height: 1.85;
+  text-align: left;
+  color: rgba(232, 232, 236, 0.88);
+}
+
+/* ── 底部两个按钮 ──
+   ⚠️⚠️ 2026-09-13：两个按钮**完全一样**（用户拍的）⚠️⚠️
+
+   原来这里给两个按钮各挂了一个类做"主次区分"：
+     .ending-close    flex: 1 1 auto    ← 占满剩余
+     .ending-archive  flex: 0 0 auto    ← 按内容宽，还加了左右内边距
+                      + 灰字灰边
+   而 `.btn` 自己的默认是 `flex: 1 1 0`（等分）—— 三条各不相同，
+   于是**一大一小、一灰一金**（用户报的："还是一个小一个大"）。
+
+   修法不是把两个数调成相等，而是**两边都不写** ——
+   让它们干净地继承 `.btn` 那一份。所以这个文件里
+   **再也不该出现 `.ending-close` / `.ending-archive` 这两条规则**。
+   index.html 里两个按钮的 class 也改成了同一个 `btn btn-main`。
+
+   ⚠️ 想再加"主次"的话，先想清楚：这一屏的两个动作
+      （存档 / 继续）对玩家是**平级**的，不是主次。 */
+.ending-actions {
+  display: flex;
+  gap: calc(var(--u) * 2);
+  margin-top: calc(var(--u) * 5);
+}
+
+/* ⚠️⚠️ 2026-09-14 晚：这里本来有一条 `.ending-actions.alone`
+      （"只剩一颗按钮时居中、不拉满"）—— 那是给"从档案库点开时
+      结局卡只剩【返回档案库】一颗"用的。
+
+      改成「记录页」之后，从档案库点开**不再走结局卡**了，
+      那条分支整个删掉（连带 app.js 的 fromArchive 参数、
+      index.html 那颗按钮、_wiring_test.js 的 7 条断言）。
+      判据是 CLAUDE.md 决策 #61：**删掉它，行为会不会变？**
+      不会。那就是维护成本。想捞回来看 git。 */
+
+/* ═══════════════════════════════════════════════════════════════════
+   ⚠️ 这里原本有一条"大屏双栏"布局（世界在左、信息和按钮在右），
+      已按用户反馈删除 —— 用户明确表示"还是在下面比较好看"。
+      现在全尺寸统一竖排：标题 → 世界 → 信息 → 按钮。
+      大屏靠上面 .app 的 max-width 保持竖向比例，不再另做布局。
+      要恢复的话，见 git 历史或本文档早期版本。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   档案库  ★ 2026-09-14 新增
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 整屏浮层：和结局面板同一个套路（见上面 .ending 那段）── */
+.archive {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 22;   /* 压在结局面板(20) 上面，低于命名弹窗(25) */
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+
+  background: rgba(7, 7, 12, 0.90);
+
+  /* ⚠️ 和别的浮层一样用 visibility + opacity，**不用 hidden 属性** ——
+     display:none 做不了过渡动画。 */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+}
+
+.archive.show {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.35s ease, visibility 0s linear 0s;
+}
+
+.archive-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 430px;              /* = min(100%, 430px)：width 已是 100% —— 见文件头「Chrome 61」段 */
+  max-height: 100%;
+  padding: calc(var(--u) * 5) calc(var(--u) * 4) calc(var(--u) * 4);
+  border: 1px solid rgba(79, 168, 232, 0.34);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(18, 18, 26, 0.97);
+}
+
+.archive-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 calc(var(--u) * 1.5) calc(var(--u) * 3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.archive-title {
+  font-size: calc(var(--u) * 3.2);
+  letter-spacing: 0.28em;
+  color: var(--accent);
+}
+
+.archive-count {
+  font-size: calc(var(--u) * 2.5);
+  color: var(--text-dim);
+}
+
+/* 列表自己滚 —— 卡片本身不许撑破屏幕 */
+.archive-list {
+  flex: 1 1 auto;
+  min-height: calc(var(--u) * 22);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(var(--u) * 1.5) 0;
+}
+
+.arch-empty {
+  padding: calc(var(--u) * 8) calc(var(--u) * 4);
+  text-align: center;
+  font-size: calc(var(--u) * 2.9);
+  line-height: 1.95;
+  color: var(--text-dim);
+}
+
+/* ── 一条档案 ── */
+.arch-item {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3);
+  padding: calc(var(--u) * 2.4) calc(var(--u) * 1.5);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.18s ease;
+}
+
+.arch-item + .arch-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.arch-item:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 小星球。存的时候就是按这个比例截的（见 app.js 的 makeThumb），
+   所以这里只管把它摆成圆的，不用管内容和尺寸对不对得上。 */
+.arch-thumb {
+  flex: 0 0 auto;
+  display: block;
+  width: calc(var(--u) * 13);
+  height: calc(var(--u) * 13);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: #07070C;
+}
+
+.arch-body {
+  flex: 1 1 auto;
+  min-width: 0;            /* ⚠️ 不写的话下面的 ellipsis 不生效（flex 子项默认不收缩） */
+  text-align: left;
+}
+
+.arch-name {
+  font-size: calc(var(--u) * 3.3);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arch-meta {
+  margin-top: calc(var(--u) * 0.5);
+  font-size: calc(var(--u) * 2.5);
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.arch-sub {
+  margin-top: calc(var(--u) * 0.3);
+  font-size: calc(var(--u) * 2.4);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arch-del {
+  flex: 0 0 auto;
+  width: calc(var(--u) * 7);
+  height: calc(var(--u) * 7);
+  border: none;
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: transparent;
+  color: rgba(138, 138, 150, 0.65);
+  font-family: inherit;
+  font-size: calc(var(--u) * 2.9);
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.arch-del:active {
+  background: rgba(232, 106, 106, 0.20);
+  color: var(--warn);
+}
+
+/* ── 底部两颗按钮 ──
+   ⚠️ 和结局面板那条规矩一样：两颗按钮**一样大**（flex 1 1 0）。 */
+.archive-actions {
+  display: flex;
+  gap: var(--gap);
+  padding-top: calc(var(--u) * 3);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.archive-actions .btn {
+  flex: 1 1 0;
+}
+
+/* 【清空】点第一下之后的状态 —— 再点一下才真的清 */
+.archive-clear.armed {
+  border-color: rgba(232, 106, 106, 0.60);
+  color: var(--warn);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   记录页  ★ 2026-09-14 新增
+
+   ⚠️ 这一节**只写"容器"** —— 里面每一块都复用结局面板那一整套类：
+        .end-sec / .end-sec-title / .end-row / .end-k / .end-v / .end-line
+        .ending-civname / .ending-civrows / .ending-bio
+      编年史那六种行样式也是现成的（.chron-row.line / .omen / .deed /
+        .event / .act / .era，见上面）。
+      好处：以后改结局面板的排版，这一页跟着一起变，不会走样。
+      ⚠️ 所以这个文件里**不该出现** .record-sec / .record-row 这种重复发明。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 整屏浮层：和 .ending / .archive 同一个套路 ──
+   ⚠️ z-index 23：**压在档案库(22) 上面**。这样按【返回列表】一收，
+      底下的档案库列表就露出来 —— 和"档案库 → 结局卡"那个交接同手法。
+      （那条路已经删了，但这个层级手法留着：档案库不关，只把这一层收掉。） */
+.record {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 23;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+
+  background: rgba(7, 7, 12, 0.92);
+
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.45s ease, visibility 0s linear 0.45s;
+}
+
+.record.show {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.45s ease, visibility 0s linear 0s;
+}
+
+/* 卡片比结局面板宽一点（430 → 470）——
+   这一页是**拿来读的文档**，不是一张摘要卡，行宽太窄会读得累。
+   ⚠️ `overflow-y: auto` 是必须的：编年史最长 37 行，一屏装不下。 */
+.record-card {
+  width: 100%;
+  max-width: 470px;              /* = min(100%, 470px)：width 已是 100% —— 见文件头「Chrome 61」段 */
+  max-height: 100%;
+  overflow-y: auto;
+  /* 滚到底不带动量回弹，免得手机上滑过头把卡片甩走 */
+  overscroll-behavior: contain;
+  padding: calc(var(--u) * 6) calc(var(--u) * 5);
+  border: 1px solid rgba(79, 168, 232, 0.34);
+  border-radius: var(--radius);   /* 直角（2026-09-15 观测站调性）*/
+  background: rgba(18, 18, 26, 0.97);
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ★★ P2#18：六个浮层出现时**从下往上滑一点点**（2026-09-16 加）★★
+
+   原来只有淡入。加上这一段之后卡片是"浮上来"的 ——
+   和「观测站」那种抽屉推出来的感觉一致。
+
+   ⚠️ **滑的是卡片，不是浮层本身。**
+      浮层那一层是整屏的暗底，滑它等于连背景一起挪，看起来像屏幕在抖。
+
+   ⚠️⚠️ **每张卡片的时长必须和它自己那层的淡入时长一致** ⚠️⚠️
+      六个浮层的淡入时长**本来就不一样**（见上面各处）：
+          .naming 0.35 · .civbirth 0.60 · .choice 0.35
+          .ending 0.45 · .archive  0.35 · .record 0.45
+      对不上的话会出现"已经滑到位了但还没显出来"（或反过来），
+      看起来像卡了一下。**改那边记得改这边。**
+
+   ⚠️ 这一段的 `transition` 写在**文件靠后**的位置，靠"后来者赢"压过卡片自己那条规则。
+      所以以后**别往上面那六条 `.xxx-card` 里加 transition** ——
+      加了会被这里盖掉，而且不报错。要加就加在这儿。
+   ═══════════════════════════════════════════════════════════════════ */
+.naming-card, .civbirth-card, .choice-card,
+.ending-card, .archive-card, .record-card {
+  transform: translateY(calc(var(--u) * 2.2));
+}
+
+.naming.show   .naming-card,
+.civbirth.show .civbirth-card,
+.choice.show   .choice-card,
+.ending.show   .ending-card,
+.archive.show  .archive-card,
+.record.show   .record-card {
+  transform: translateY(0);
+}
+
+.naming-card   { transition: transform 0.35s ease; }
+.civbirth-card { transition: transform 0.60s ease; }   /* 全游戏最值得"揭晓"的一刻，慢一点 */
+.choice-card   { transition: transform 0.35s ease; }
+.ending-card   { transition: transform 0.45s ease; }
+.archive-card  { transition: transform 0.35s ease; }
+.record-card   { transition: transform 0.45s ease; }
+
+.record-kicker {
+  font-size: calc(var(--u) * 3);
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: var(--text-dim);
+}
+
+/* ── 星球图 ──
+   ⚠️ 这**只是一张图**（打开时现画的 canvas），不是"活的世界"。
+      圆形容器和档案库列表里的缩略图同一个规格（.arch-thumb 也是 50%）。 */
+.record-planetwrap {
+  display: flex;
+  justify-content: center;
+  margin-top: calc(var(--u) * 4);
+}
+
+.record-planet {
+  display: block;
+  width: calc(var(--u) * 40);
+  height: calc(var(--u) * 40);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: #07070C;
+}
+
+/* ── 编年史全文 ──
+   ⚠️ 左对齐：一串历史行居中会读得很难受
+      （和 .ending-bio 是同一条理由 ——"一段文字左对齐才好读"）。
+   ⚠️ 字号/行高照抄 .chronicle-body，两边读起来才是同一个节奏。 */
+.record-chron {
+  margin-top: calc(var(--u) * 2);
+  text-align: left;
+  font-size: calc(var(--u) * 2.8);
+  line-height: 1.72;
+}
+
+/* ── 底部两颗出口 ──
+   ⚠️⚠️ 这一层整屏盖住，点外面没反应、没有 Esc、刷新丢页面 ——
+      底部这两颗是**全屏唯一的出口**，一颗都不许少。
+      `_wiring_test.js` 有一条断言钉着。
+   ⚠️ 【返回列表】金色、【回主界面】普通：翻完一条多半想接着翻下一条。
+      想改主次就换这两颗的 class，**不要**在这里加 .record-back 之类的专属类。 */
+.record-actions {
+  display: flex;
+  gap: calc(var(--u) * 2);
+  margin-top: calc(var(--u) * 5);
+}
+/* ═══════════════════════════════════════════════════════════════════
+   ★★ Chrome 61 兜底层：flex 的 `gap` ★★（2026-09-17 加）
+
+   **默认不生效。** 只有 `app.js` 实测出这个浏览器不支持 flex 的 gap 时，
+   才会给 <html> 挂上 `no-flexgap`，下面这些规则才开始起作用 ——
+   支持的浏览器（现在几乎全部）**一个字节都不受影响**，走的还是上面那些 `gap`。
+
+   ⚠️⚠️ 为什么是 JS 实测、不是 `@supports (gap: 1px)`：
+      `gap` 最早是 **grid** 的属性（Chrome 57+），Chrome 61 **认得这个语法**，
+      只是不把它用在 flex 上 —— `@supports` 会返回 **true**，兜底永远不生效。
+      官方规范专门点了这个坑，要求「用 JS 实际测量 Flex 布局后切换 class」。
+      探测代码见 app.js 的 `flexGapOk()`。
+
+   ⚠️ 为什么这一节要放在**文件末尾**：
+      这些规则和"子项自己写 margin"那类规则的特异度一样（都是一个类），
+      不写前缀的话只能靠"谁在后面"决胜负 —— 实测就栽在这儿：
+      `.row` 那一行被原生滑杆自带的 `margin: 0` 压掉，整行歪了 13px。
+      加上 `.no-flexgap` 前缀是 (0,2,0)，稳压子项的单类规则，放哪儿都赢。
+      （★ 2026-09-17：那根原生滑杆已经换成 `<span class="row-bar">`，
+        它身上一个 margin 都没有，这个具体冲突没了 —— 但**教训还在**：
+        以后凡是给某个容器加 `gap`，都要先看子项有没有自己的 margin。）
+
+   ⚠️⚠️ 子项**自己带 margin** 的容器要单独处理（见下面 `.choice-go` 那条）：
+      `gap` 是在子项原有的 margin **之外**再加一段，
+      而 `margin-left` / `margin-top` 是**替换**掉子项原有的 margin。
+      所以那种容器必须把两段**加起来**写，不能照抄 gap 的值。
+
+   对**不换行**的 flex，`> * + *` 加单边外边距和 `gap` **逐点等价**（实测过）。
+   唯一的例外是 `.ending-civrows`（会换行），那一节自己解释了。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 横向排列的：给第 2 个起的子项加左边距 ── */
+.no-flexgap .obs-bar         > * + * { margin-left: calc(var(--u) * 1.4); }
+.no-flexgap .chronicle-head  > * + * { margin-left: calc(var(--u) * 2); }
+.no-flexgap .readout         > * + * { margin-left: calc(var(--u) * 1); }
+.no-flexgap .speeds          > * + * { margin-left: calc(var(--u) * 1.8); }
+.no-flexgap .row             > * + * { margin-left: calc(var(--u) * 2.6); }
+.no-flexgap .bottombar       > * + * { margin-left: calc(var(--u) * 2.4); }
+.no-flexgap .ending-actions  > * + * { margin-left: calc(var(--u) * 2); }
+.no-flexgap .arch-item       > * + * { margin-left: calc(var(--u) * 3); }
+.no-flexgap .archive-actions > * + * { margin-left: var(--gap); }
+.no-flexgap .record-actions  > * + * { margin-left: calc(var(--u) * 2); }
+
+/* ── 纵向排列的：给第 2 个起的子项加上边距 ── */
+.no-flexgap .el-btn         > * + * { margin-top: calc(var(--u) * 0.6); }
+.no-flexgap .civbirth-rows  > * + * { margin-top: calc(var(--u) * 2.8); }
+.no-flexgap .choice-options > * + * { margin-top: calc(var(--u) * 2.2); }
+.no-flexgap .choice-opt     > * + * { margin-top: calc(var(--u) * 0.7); }
+.no-flexgap .choice-result  > * + * { margin-top: calc(var(--u) * 1.6); }
+
+/* ⚠️⚠️ `.choice-go`（结果面板最后那颗按钮）**自己带着 `margin-top: 5u`**。
+   上面那条是"替换"，会把那 5u 冲掉 —— 所以这里要把两段**加起来**：
+       gap 的 1.6u ＋ 它自己的 5u ＝ **6.6u**
+   漏了这条，按钮会往上蹿 5u 贴住正文（实测过）。
+   ⚠️ 以后凡是给某个容器加 `gap`，先看一眼子项有没有自己的 margin ——
+      `_wiring_test.js` 第 23 节有断言盯着这层覆盖全不全。 */
+.no-flexgap .choice-result > .choice-go { margin-top: calc(var(--u) * 6.6); }
+
+/* ⚠️ `.row` 那四行（名字 + 读数条 + 数值）**不需要额外写**。
+   ★ 2026-09-17：这几行原来要单独写一条，是因为那 4 根滑杆自己带着
+     `margin: 0`（原生 `<input type="range">` 的默认外边距），
+     会被上面那条"替换"掉、整行歪 13px。
+     换成 `.row-bar`（`<span>`）之后**它身上一个 margin 都没有**，
+     上面那条 2.6u 正好就是 gap 的效果 —— 冲突从根上没了。
+   写这段注释是让下一个人知道：这一处是**查过的**，不是漏了。 */
+
+/* ── ⚠️ 唯一会换行的容器，不能用「子项单边外边距」那一招 ──
+   换行之后每行的第一个也会被推一截。改成**每个子项四边各加一半间距**：
+     左右各 1.2u → 相邻两项之间 2.4u（原来的 column-gap）✓
+     上下各 0.45u → 相邻两行之间 0.9u（原来的 row-gap）✓
+   但四边都加了一半，最外圈就多出半格，所以容器要抵掉：
+     margin-top 1.8u → 1.35u（补上面半格）
+     margin-bottom: -0.45u（补下面半格）
+     margin-left / right: -1.2u（补左右各半格）
+   ⚠️⚠️ 左右那两条**最容易漏，但漏了会真的出错**：
+      子项各自带 1.2u 外边距后，**每行实际占的宽度比原来多 2.4u**（两端各多半格），
+      于是**换行会提前** —— 实测 360px 宽时，本来 3 个能排一行，加了 margin 就挤成两行。
+      左右各 -1.2u 正好把这 2.4u 还回去，换行位置和居中位置就都和 gap 版**逐点相同**。
+   ⚠️ 三处补偿都不能省：省了容器会凭空变大，后面的内容跟着挪。 */
+.no-flexgap .ending-civrows {
+  margin-top:    calc(var(--u) * 1.35);
+  margin-bottom: calc(var(--u) * -0.45);
+  margin-left:   calc(var(--u) * -1.2);
+  margin-right:  calc(var(--u) * -1.2);
+}
+.no-flexgap .ending-civrows > * { margin: calc(var(--u) * 0.45) calc(var(--u) * 1.2); }
