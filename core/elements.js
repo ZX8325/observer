@@ -70,7 +70,7 @@
     {
       key: 'fire',
       name: '火种',
-      color: '#FF8A3C',
+      color: '#E86A58',
       desc: '提升局部能量浓度',
       local: { energy: ENERGY_STRONG },
       vis: 'bloom'          // 向外扩散的暖光
@@ -78,7 +78,7 @@
     {
       key: 'water',
       name: '水珠',
-      color: '#4FA8E8',
+      color: '#4DBDC7',
       desc: '提升局部水之本源',
       local: { water: 22 },
       vis: 'ripple'         // 一圈圈荡开的涟漪
@@ -86,7 +86,7 @@
     {
       key: 'stone',
       name: '土石',
-      color: '#C89A4A',
+      color: '#C79858',
       desc: '提升局部大地之基',
       local: { land: 22 },
       vis: 'bloom'
@@ -94,7 +94,7 @@
     {
       key: 'air',
       name: '气团',
-      color: '#D8DCE4',
+      color: '#C1CAD6',
       desc: '提升局部大气密度',
       local: { atmo: 22 },
       vis: 'drift'          // 柔和飘动的雾
@@ -102,7 +102,7 @@
     {
       key: 'ice',
       name: '冰晶',
-      color: '#9FD8F0',
+      color: '#8ED1DF',
       desc: '降低局部能量浓度',
       local: { energy: -ENERGY_STRONG },
       vis: 'shatter'        // 锐利的冷光
@@ -110,7 +110,7 @@
     {
       key: 'thunder',
       name: '雷种',
-      color: '#FFE86A',
+      color: '#F2CA52',
       desc: '触发一次天象',
       local: {},            // 效果来自随机天象，见 WEATHER
       vis: 'flash'          // 短暂过曝
@@ -118,7 +118,7 @@
     {
       key: 'light',
       name: '光种',
-      color: '#FFD870',
+      color: '#FFEAA7',
       desc: '光之力上升，该区域生态加速',
       // energy：光本身就带来热。
       // 这是玩家**救活一颗冻住的星球**的主要手段之一。
@@ -129,7 +129,7 @@
     {
       key: 'dark',
       name: '暗种',
-      color: '#8A5AC8',
+      color: '#8A6BBE',
       desc: '暗之力上升，该区域地质加速',
       // energy：暗带走热。反过来可以用来给"烧着不冷却"的世界降温。
       local: { light: -30, geo: 0.8, energy: -ENERGY_STRONG },
@@ -168,6 +168,103 @@
     night: '永夜降临',
     rift:  '混沌裂隙'
   };
+
+  /* ─────────────────────────────────────────────────────────────
+     投放旁白 ★ 2026-09-21 ── 往地表丢一个元素之后，中间那条观察日志飘的话
+
+     ⚠️ 单独拎成一张表（不内联进 `drop` 里）—— 和 `CONFLICT_TEXT` 同一个道理：
+        内联在逻辑里的字符串 `_style_test.js` **收集不到**，就成了文风的盲区。
+        哪天有人把「大地亮了一瞬」改成一句口语，不会有任何测试红。
+
+     ⚠️⚠️ 每一句都必须和这个元素**实际干的事**对得上 ⚠️⚠️
+        （能力清单见上面 LIST 的 `local` / `global`）
+        对不上 = 让游戏替玩家撒谎。实测踩过两条：
+          · 光种原来写「水汽开始往低处走」—— 光种一点都不碰水
+            （它加的是 light / life / energy）
+          · 暗种原来写「草木的生长慢了下来」—— 暗种加的是 geo（**地质**加速），
+            它不减速生态
+
+     ⚠️ 挑法见下面的 `dropLine()`：**轮着来，不重复**。
+
+     ⚠️ 这些是**所有世界通用**的，而世界千差万别（有的冻成冰球、有的烧着不冷却）——
+        所以「冰层退了一些」这种句子，投在从没结过冰的星球上会读着怪。
+        要按世界状态分档挑，是另一件事，先不做。
+
+     ★★ 标点约定：**一件事的两半用逗号连，别用句号断开**（2026-09-21）★★
+        用户连着点了三条。原话是「一团火落入地表后面的句号改成逗号」，
+        看过之后把同样写法的另外两条也一起改了。
+        三条都是同一个形状 —— 前后两半是**因和果**、或**同一个场景的两笔**，
+        中间用句号断开就成了"两句不相干的陈述"：
+
+          ✅ 一团微火落入地表，周围开始发烫。      （不是「。周围」）
+          ✅ 有东西在深处燃烧，冰层退了一些。      （不是「。冰层」）
+          ✅ 有光落下，这一处比周围先亮起来。      （不是「。这一处」）
+
+        ⚠️ 改这一张表的时候按这条检查一遍：**一句话里只该有一个句号**
+           （句末那个）。写成两个就是拆成了两句，而这里每一句讲的是
+           **一次投放**，拆开读就不像一件事了。
+           ⚠️ 这不是全项目的规矩，是**这张表**的 —— 别拿它去改编年史，
+              那边的历史行本来就是一行一句、句句独立。 */
+  var DROP_TEXT = {
+    fire: [
+      /* ⚠️ 这三条都是「，」（用户 2026-09-21 点的，见上面那段标点约定） */
+      '一团微火落入地表，周围开始发烫。',
+      '热量在土里慢慢散开，此地变暖了。',
+      '有东西在深处燃烧，冰层退了一些。'
+    ],
+    water: [
+      '水汽在低洼处汇聚，土壤开始变湿。',
+      '一片云停驻在半空，降下第一场雨。',
+      '有液体渗入地表，洼地开始积水。'
+    ],
+    stone: [
+      '落点处发出沉闷的震动，地表微微隆起。',
+      '有沉重的物质沉入地底，陆地向上抬升。',
+      '岩石在深处碰撞，大陆的骨架硬了一分。'
+    ],
+    air: [
+      '空中多了一层模糊的雾气。',
+      '风声变大了，气流开始在地表上方打转。',
+      '大气变稠，远处的轮廓变得朦胧。'
+    ],
+    ice: [
+      '接触地面的瞬间，一片白霜向外蔓延。',
+      '温度骤降，土壤里的水分凝成了冰。',
+      '有一阵刺骨的冷意掠过，地表结了一层薄霜。'
+    ],
+    /* ⚠️ 雷种独一份：它除了这句，还会另外飘一句**天象结果**
+       （见 WEATHER 的 `text`）。两句是"投了什么"和"降下了什么"，不是二选一。 */
+    thunder: [
+      '雷声滚过天际，极光在暗空中一闪而逝。',
+      '云层中积蓄着狂暴的能量，闪电劈开了天幕。'
+    ],
+    light: [
+      '有光落下，这一处比周围先亮起来。',   // ⚠️ 逗号，见上面那段标点约定
+      '一道微光没入土里，草木在暗处疯狂生长。',
+      '大地亮了一瞬，有东西在悄悄苏醒。'
+    ],
+    dark: [
+      '一道幽影沉入地底，此界的夜色更深了。',
+      '光芒被无声地吞噬，地表暗了一寸。',
+      '暗色物质侵入地层，底下的岩层动得更快了。'
+    ]
+  };
+
+  /**
+   * 挑一句投放旁白：**轮着来，不重复**。
+   *
+   * 计数直接用 `world.dropTally[key]` —— `drop()` 开头刚给它加过，
+   * 所以这里读到的是"这一次是这个元素的第几次投放"（从 1 起）。
+   * ⚠️ 它挂在 `world` 上 → **换一颗星球自动归零**，不用额外清什么。
+   *
+   * ⚠️ 为什么不用随机：连投五次火种，随机可能连着撞同一句，读着像卡住了。
+   */
+  function dropLine(world, key) {
+    var lines = DROP_TEXT[key];
+    if (!lines || !lines.length) return null;
+    var n = (world.dropTally && world.dropTally[key]) || 1;
+    return lines[(n - 1) % lines.length];
+  }
 
   /* ═══════════════════════════════════════════════════════════════
      参数
@@ -242,7 +339,9 @@
    * @param {object} world
    * @param {string} key  元素 key（见 LIST）
    * @param {number} x,y  世界坐标，单位圆内（圆心 0,0，边缘距离 1）
-   * @returns {object|null} 有事发生就返回 { text: '...' }，用来弹提示
+   * @returns {object|null} 有事发生就返回 `{ text: '...' }` —— `text` 是要飘的那句。
+   *          雷种还会多一个 `also`（**天象结果**，见 DROP_TEXT.thunder 上面那段），
+   *          app.js 先飘 `text`、隔一会儿再飘 `also`。
    */
   function drop(world, key, x, y) {
     var def = BY_KEY[key];
@@ -258,7 +357,19 @@
     // 雷种特殊：它不留下影响斑，而是立刻触发一次随机天象，
     // 然后把天象自己的影响落在那儿。
     if (key === 'thunder') {
-      return dropWeather(world, x, y);
+      /* ★ 2026-09-21：雷种飘**两条** ——
+           ① 投放那一瞬间（`DROP_TEXT.thunder`）
+           ② 降下了什么（天象自己的 `text`）
+         ⚠️ 顺序靠 `also` 表达：app.js 先飘 `text`、隔一会儿再飘 `also`
+            （走观察日志那条队列，见 app.js 的 showLog）。
+         ⚠️ `weather` 这个字段**留着没动** —— 别处（测试、探针）还在读它。 */
+      var wev = dropWeather(world, x, y);
+      return {
+        text:  dropLine(world, 'thunder'),
+        also:  wev ? wev.text : null,
+        weather: wev ? wev.weather : null,
+        color: def.color      // ★ 2026-09-21：投放旁白用**这个元素的颜色**
+      };
     }
 
     // 光斑寿命加一点随机浮动 —— 免得同一片区域的光斑同时"融进去"，
@@ -296,7 +407,11 @@
       }
     }
 
-    return null;   // 普通元素不弹提示，视觉反馈就够了
+    /* ★ 2026-09-21：普通元素以前这里返回 `null`（当时的理由是
+       "视觉反馈就够了"）。现在返回一句**投放旁白** ——
+       它走中间那条观察日志，飘完就散，不占地方也不打断玩法。
+       ⚠️ 上面那句老注释是 2026-09-12 写实的，2026-09-21 起不再成立。 */
+    return { text: dropLine(world, key), color: def.color };
   }
 
   /** 投放一次随机天象（雷种） */
@@ -409,19 +524,16 @@
     // 已经触发过的不再重复触发，除非状态恢复后又越线
     if (world.light >= FIRE_THRESHOLD && world.event !== 'fire') {
       world.event = 'fire';
-      world.eventTime = 0;
       return { type: 'fire', text: CONFLICT_TEXT.fire };
     }
 
     if (world.light <= NIGHT_THRESHOLD && world.event !== 'night') {
       world.event = 'night';
-      world.eventTime = 0;
       return { type: 'night', text: CONFLICT_TEXT.night };
     }
 
     if (world.discord >= RIFT_THRESHOLD && world.event !== 'rift') {
       world.event = 'rift';
-      world.eventTime = 0;
       world.fractured = true;      // 结局会因此改成「世界破碎」
       return { type: 'rift', text: CONFLICT_TEXT.rift };
     }
@@ -433,8 +545,6 @@
     if (world.discord < RIFT_THRESHOLD - 15 && world.event === 'rift') {
       world.event = null;
     }
-
-    if (world.event) world.eventTime += dSim;
 
     return null;
   }
@@ -477,20 +587,14 @@
     return out;
   }
 
-  /**
-   * 全局某个位置的本源数值（全局值 + 局部加成），并夹在 0-100 之间。
-   * 演化逻辑要判断"这里够不够热/够不够湿"时用这个。
-   */
-  function essenceAt(world, x, y) {
-    var add = localAt(world, x, y);
-    return {
-      energy: clamp(world.essence.energy + add.energy, 0, 100),
-      water:  clamp(world.essence.water  + add.water,  0, 100),
-      atmo:   clamp(world.essence.atmo   + add.atmo,   0, 100),
-      land:   clamp(world.essence.land   + add.land,   0, 100)
-    };
-  }
+  /* ⚠️ 2026-09-22 删掉了 `essenceAt(world, x, y)` —— 真死代码
+     （全项目零调用，连测试和仪器都不碰）。
 
+     ⚠️ 它那条注释写着「演化逻辑要判断"这里够不够热/够不够湿"时用这个」——
+        **那句话是假的**：演化逻辑实际走的是 `evolution.js` 里的
+        `effectiveEssence(world)`。要取**某个位置**的局部加成，用 `localAt`。
+     ⚠️ 顺手核过：`localAt` **不是**只被它调用（`elements.js` 自己、
+        `evolution.js`、`_elements_test.js` 都在用），所以没连累到。 */
   /* 黄金角 ≈ 2.39996 弧度。用它给采样点定角度，点会铺得很均匀、不结成一圈一圈的环。 */
   var GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
@@ -614,7 +718,6 @@
     world.light = 0;
     world.discord = 0;
     world.event = null;
-    world.eventTime = 0;
     world.fractured = false;
     bumpVersion(world);   // 斑全清了 → 缓存失效
   }
@@ -624,6 +727,7 @@
     BY_KEY: BY_KEY,
     WEATHER: WEATHER,
     CONFLICT_TEXT: CONFLICT_TEXT,
+    DROP_TEXT: DROP_TEXT,     // ★ 2026-09-21：投放旁白（_style_test.js 要扫它）
 
     MAX_DROPS: MAX_DROPS,
     DROP_RADIUS: DROP_RADIUS,
@@ -638,7 +742,7 @@
     drop: drop,
     step: step,
     localAt: localAt,
-    essenceAt: essenceAt,
+    /* ⚠️ 2026-09-22：`essenceAt` 导出删了（真死代码，见上面那段墓碑）。 */
     averageBoost: averageBoost,
     lightEffects: lightEffects,
     isInsideWorld: isInsideWorld,

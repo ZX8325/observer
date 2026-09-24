@@ -138,13 +138,11 @@
       light: 0,           // 光暗值 -100 ~ +100（正=光占优，负=暗占优）
       discord: 0,         // 光暗冲突值，超过阈值会撕出「混沌裂隙」
       event: null,        // 当前正在发生的冲突事件（fire / night / rift）
-      eventTime: 0,       // 事件已经持续了多少世界秒
       fractured: false,   // 出现过混沌裂隙 → 结局会改成「世界破碎」
 
       // 运行状态
       running: false,
       timeScale: 1,
-      simTime: 0,
       finished: false,
       ending: null
     };

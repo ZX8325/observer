@@ -60,6 +60,12 @@
   var elSeed    = document.getElementById('info-seed');
   var elTraits  = document.getElementById('info-traits');
   var elToast   = document.getElementById('toast');
+  /* 中间那条观察日志（文明前的旁白）★ 2026-09-21。
+     ⚠️ 它和 `elToast` 是**两个不同的位置**，别混：
+         文明前 → elLog（中间漂浮）
+         文明阶段及以后 → elToast（顶栏，原样没动）
+        分流在下面的 showToast 里。 */
+  var elLog     = document.getElementById('log');
   var elObsDot  = document.getElementById('obs-dot');
   var elObsCode = document.getElementById('obs-code');
   var elStages  = document.getElementById('stages');
@@ -134,6 +140,13 @@
   var btnNameRoll= document.getElementById('naming-reroll');
   var btnNameBack= document.getElementById('naming-back');
 
+  // 观测指南（★ 2026-09-21，接在命名弹窗后面 —— 见 index.html 那一段）
+  var elGuide      = document.getElementById('guide');
+  var elGuideLead  = document.getElementById('guide-lead');
+  var elGuideLines = document.getElementById('guide-lines');
+  var btnGuideGo   = document.getElementById('guide-go');
+  var btnGuideSkip = document.getElementById('guide-skip');
+
   // 演化路线选择弹窗（同上，在 .app 外面）
   var elChoice    = document.getElementById('choice');
   var elChTitle   = document.getElementById('choice-title');
@@ -154,6 +167,23 @@
         去遍历属性（或者反过来），而**遍历到不存在的 key 是静默的**。 */
   var attrVals    = {};
   var speedBtns   = [];   // 倍速按键
+
+  /* ★★ 玩家选的倍速（2026-09-23 加）★★
+
+     ⚠️⚠️ 它必须存在这里，不能只存在 `world.timeScale` 上 ⚠️⚠️
+
+     倍速是**玩家的意图**，不是"这一颗世界的设置"。
+     而【换一个星球】会**整个换掉 world**（`createWorld` 里 `world = candidate`），
+     新世界带着 `timeScale: 1` 出厂 —— 于是：
+       按键上还亮着 3×，世界却按 1× 跑。
+     用户报的正是这个：「重置下一局还是三倍速这个按键上，
+     但是这个时候并没有用三倍速运行，除非再点一个别的速度再点回来」。
+
+     ⚠️ 这类"UI 和状态各说各话"的 bug 是**静默**的 —— 不报错、不崩溃，
+        只是玩家觉得"按钮坏了"。修法就是让两者读**同一个来源**：
+        `setSpeed` 写它、`createWorld` 读它。 */
+  var curSpeed    = 1;
+
   var elBtns      = [];   // 元素栏的八个按钮
 
   /* 编年史已经渲染到第几行、第几纪、名字是谁。
@@ -185,6 +215,7 @@
   var stars = [];            // 星点
   var time = 0;              // 累计世界时间（秒）
   var lastTs = 0;            // 上一帧的时间戳
+  var frameErrored = false;  // 主循环出过错没有（只报一次，见 `frame()`）
 
   var STAR_SEED = 20260911;  // 星空的种子，固定即可（和世界无关）
 
@@ -192,6 +223,18 @@
   // 为什么不占满？因为光环会伸到 1.65 倍半径、卫星轨道最远到 2.05 倍，
   // 留出余量它们才不会被画布边缘切掉。
   var WORLD_FIT = 0.44;
+
+  /* 世界在 `.stage` 里的**竖直位置**（0.5 = 正中）★ 2026-09-21
+     ⚠️ 文明**之前**往上提一点。理由：中间那条观察日志就贴在 `.stage` 的下沿，
+        而世界最大能长到占满 94% 的高度（= `0.5 + WORLD_FIT`）——
+        两者会擦上（实测拍出来字贴着星球下缘）。
+        提到 0.43 之后，加上日志自己占的那约 6.8u，留出 25px 左右的余量。
+     ⚠️⚠️ **文明阶段不提**（仍旧正中 0.5）：那一段有它自己定下来的版面，
+        用户明确说过不准动。
+     ⚠️ 分档靠 `civUIOn`。它切的时候 `.stage` 会跟着变尺寸，
+        而 `ResizeObserver` 正盯着 `.stage`（见文件末尾），所以布局会自己重算 ——
+        **不用**在 `setCivUI` 里手动调一次。 */
+  var WORLD_Y_WATCH = 0.43;
 
   /* ─────────────────────────────────────────────────────────────
      画布尺寸
@@ -229,14 +272,17 @@
     // ── ② 世界画在哪 ──
     // 画布是整屏的，但世界**不能**画在屏幕正中 ——
     // 那样会被上面的标题或下面的信息栏压住。
-    // 正确做法是画在"中间那块留白"（.stage）的正中。
+    // 正确做法是画在"中间那块留白"（.stage）里。
+    //
+    // ⚠️ ★ 2026-09-21：**不是正中了** —— 文明之前往上提一档（`WORLD_Y_WATCH`），
+    //    给下沿那条观察日志让出地方。文明阶段仍旧正中。见那个常量的注释。
     var r = stage.getBoundingClientRect();
 
     stageW = r.width;
     stageH = r.height;
 
     worldCx = r.left + r.width / 2;
-    worldCy = r.top + r.height / 2;
+    worldCy = r.top + r.height * (civUIOn ? 0.5 : WORLD_Y_WATCH);
 
     // 世界本体最多占这块区域短边的 44%。
     // 为什么不占满？因为光环会伸到 1.65 倍半径、卫星轨道最远到 2.05 倍，
@@ -301,6 +347,11 @@
 
     world = candidate;
     world.name = null;                         // 新世界 —— 名字要重新起（点演化时会问）
+    /* ★ 2026-09-23：**把玩家选的倍速带过来**。
+       ⚠️⚠️ 少了这一行就是个静默的 bug：新世界按出厂值 1× 跑，
+          而倍速按键还亮在玩家上次选的那一档上 —— 见 `curSpeed` 那段。
+       ⚠️ 按键不用在这里刷：它本来就亮着玩家选的那一档，现在世界跟上了。 */
+    world.timeScale = curSpeed;
     time = 0;
     world.evo.progress = 0;                    // 混沌迷雾从最浓开始
     refreshInfo();
@@ -447,7 +498,7 @@
          （当年截断是怕撑不下，其实多虑了。）
 
          ⚠️ 别再加回截断。名字表在 WorldGen.ESSENCE_NAMES 里只有一份，
-            上面那些滑杆用的也是同一份全名 —— 截断等于凭空造出第二套叫法。 */
+            上面那些本源读数用的也是同一份全名 —— 截断等于凭空造出第二套叫法。 */
       label.textContent = WorldGen.ESSENCE_NAMES[k];
 
       var value = document.createElement('span');
@@ -485,7 +536,7 @@
 
        ── 为什么文明阶段才出现 ──
        文明之前**这四个数根本还不存在**（`Civ.roll` 在进文明那一刻才写），
-       顶上去只会是四个 0。而设置模式里玩家还得靠本源滑杆一眼看出
+       顶上去只会是四个 0。而设置模式里玩家还得靠本源读数一眼看出
        "这颗世界什么命" —— 那个不能动。
 
        ── 为什么不用 `Civ.ATTR_KEYS` 的字面顺序，而是显式列一个数组 ──
@@ -579,12 +630,30 @@
     elPalHint.textContent = cur
       ? (cur.name + ' · ' + cur.desc)
       : '选一个元素，再点世界表面投放';
+
+    /* ★ 2026-09-21：选了元素之后，这行说明**染成那个元素的颜色**。
+       用户的原话：「点击元素，下面会有元素的功能介绍，这个字体也不太明显，
+       玩家可能会忽略掉，所以把字体改成跟元素一样的颜色 就是点击哪个元素
+       就显示哪个」。
+
+       ⚠️ 为什么用内联样式、而不是在 CSS 里按类写 8 条：
+          颜色只有一个来源 —— `core/elements.js` 每个元素定义里的 `color`
+          字段。CSS 里再抄一份就成了**两把尺子**，改了元素色这边不会跟着变
+          （这个项目在这件事上栽过）。
+          `.el-btn` 选中时也是这么染的（看上面那个循环），两处一致。
+       ⚠️ 传空串（不是某个默认色）→ 落回 style.css 里 `.palette-hint` 的
+          `var(--text-dim)`。"没选元素"那行操作说明不该有颜色。 */
+    elPalHint.style.color = cur ? cur.color : '';
   }
 
   /** 切换倍速 */
   function setSpeed(v) {
-    if (!world) return;
-    world.timeScale = v;
+    /* ★ 2026-09-23：**先记住玩家的意图，再管世界**。
+       ⚠️ 原来是 `if (!world) return;` 一句挡在最前面 ——
+          那样在 world 还没建出来时点倍速会**连按键也不亮**，
+          而且意图没地方存，换星球时就丢了（见 `curSpeed` 那段）。 */
+    curSpeed = v;
+    if (world) world.timeScale = v;
     for (var i = 0; i < speedBtns.length; i++) {
       speedBtns[i].el.className = 'speed-btn' +
         (speedBtns[i].v === v ? ' active' : '');
@@ -665,6 +734,22 @@
 
     // 用 class 而不是 hidden —— display:none 的元素做不了淡入动画
     elEnding.className = 'ending show';
+
+    /* ★★ 2026-09-22：结局一弹出来就提示"开始下一轮"，**一直挂到重置** ★★
+
+       ⚠️ 触发点从【存入档案库】挪到这儿了。原来那句话只在"存了档"才出现 ——
+          玩家点【继续观察】直接走人，屏幕上什么提示都没有。
+          **该提示的是"这一局完了"，和存不存档没有关系。**
+
+       ⚠️⚠️ 这条**必须走 `showToast` 的分流**，不能直接写顶栏 ⚠️⚠️
+          顶栏在"观察模式 + 没到文明"时是**收起来**的（`height: 0`，
+          见 style.css 那一段），而「未成形」「世界破碎」正是没走到文明的结局 ——
+          硬写进去就是"字写进了看不见的地方"（本项目栽过）。
+          `showToast` 会把这种局面转给中间那条日志（`showLog` 的 sticky）。
+
+       ⚠️ 第三参 `true` = 常驻：不排定时器。收掉它的只有【重置】/【换一个星球】
+          —— 那两个地方会 `clearToast()` + `clearLog()`。 */
+    showToast('点击底部重置，开启下一轮游戏', null, true);
   }
 
   /** 阿拉伯数字 → 汉字
@@ -933,9 +1018,79 @@
   }
 
   /* ─────────────────────────────────────────────────────────────
+     观测指南  ★ 2026-09-21
+     ─────────────────────────────────────────────────────────────
+     接在命名弹窗后面：给世界起完名 → 弹出这个 → 点【确认接入】才开跑。
+
+     ⚠️⚠️ 它**替掉**了原来那条开场提示（`Evolution.INTRO_HINT`）⚠️⚠️
+        那条是"开跑之后在观察日志里飘一句"，淡入 .6 + 停留 3.2 秒。
+        用户否掉的理由：低头看一眼星球就错过了，而这几句是**规则**。
+
+     ⚠️ 正文住在 `core/evolution.js` 的 `GUIDE` 里（不是 index.html）——
+        写在 HTML 里就是**文风盲区**，`_style_test.js` 收不到，
+        改成一句口语不会有任何测试红。这个坑本项目踩过四次。
+        序号 `1. 2. 3.` 同理，由 style.css 用 CSS 计数器画。 */
+
+  var GUIDE_SKIP_KEY = 'msj.guide.v1';
+
+  /** 玩家点过【略过指南，不再提示】没有。
+   *  ⚠️ 读不到（隐私模式 / 存坏了 / 配额满）一律当**没点过** ——
+   *     宁可多弹一次，也不要因为读不出来就把指南永久吞掉。 */
+  function guideSkipped() {
+    var st = storage();
+    if (!st) return false;
+    try { return st.getItem(GUIDE_SKIP_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  /** 永久记住"不再提示"。
+   *  ⚠️ 写不进去也**不算失败** —— 这一次照样关掉指南（见 closeGuide），
+   *     只是下次开页面还会再弹一遍。平台规范写着"数据不保证永久持久化"，
+   *     所以不许把"记住"当成一定能成的事。 */
+  function guideSkipForever() {
+    var st = storage();
+    if (!st) return;
+    try { st.setItem(GUIDE_SKIP_KEY, '1'); } catch (e) {}
+  }
+
+  /** 把「你已经接入此界」和三行说明填进去。
+   *  ⚠️ 填过一次就不再来 —— 内容是固定的，没必要每次弹都重建一遍 DOM。 */
+  function fillGuide() {
+    if (elGuideLines.childNodes.length) return;
+    var i, d;
+    elGuideLead.textContent = Evolution.GUIDE.lead;
+    for (i = 0; i < Evolution.GUIDE.lines.length; i++) {
+      d = document.createElement('div');
+      d.className = 'guide-line';
+      /* ⚠️ 这里**只放正文**，序号由 CSS 的 `.guide-line::before` 画 ——
+         写进字符串的话会撞上"全篇不用阿拉伯数字"那条老规矩。 */
+      d.textContent = Evolution.GUIDE.lines[i];
+      elGuideLines.appendChild(d);
+    }
+  }
+
+  function showGuide() {
+    fillGuide();
+    elGuide.className = 'guide show';
+  }
+
+  function hideGuide() {
+    elGuide.className = 'guide';
+  }
+
+  /** 关掉指南，然后让世界跑起来。
+   *  @param {boolean} skipAll  玩家点的是【略过指南，不再提示】吗 */
+  function closeGuide(skipAll) {
+    if (skipAll) guideSkipForever();
+    hideGuide();
+    world.running = true;
+    lastStuckText = null;   // 和 startEvolution 里那句同一个道理：开跑了，卡住的提示可以再弹
+    syncButtons();
+  }
+
+  /* ─────────────────────────────────────────────────────────────
      演化路线选择
      ─────────────────────────────────────────────────────────────
-     世界走到三条岔路口时弹出，问玩家一句，然后按答案改变世界。
+     世界走到两条岔路口时弹出，问玩家一句，然后按答案改变世界。
 
      ⚠️ 弹出时世界已经**屏住呼吸**了 ——
         闸门在 core/evolution.js 的 step 里（看到 route.pending 就冻结）。
@@ -948,7 +1103,7 @@
      */
 
   /* 当前弹窗是哪一种：
-       'route' —— 三道固定的岔路口（core/choices.js）  **观察者替世界做决定**
+       'route' —— 两道固定的岔路口（core/choices.js）  **观察者替世界做决定**
        'big'   —— 大事件（core/civEvents.js 的 BIG_EVENTS）**观察者出手**
 
      ⚠️ 两个都是"**玩家选**"，所以长得一样、共用这一个弹窗。
@@ -1165,7 +1320,7 @@
      模式切换
      ─────────────────────────────────────────────────────────────
      设置模式：调参数 → 点【演化】
-     观察模式：滑杆锁死，专心看世界变化
+     观察模式：本源读数锁死，专心看世界变化
 
      实现方式只是改 body 上的一个 class，具体哪些控件显示
      由 CSS 的 .setup-only / .watch-only 决定。
@@ -1191,6 +1346,29 @@
        没有意义，而且 `canvasTap` 现在也认它（见那个函数里的说明）。
        和 `setMode('setup')` 里那一句是同一个道理。 */
     if (on) selectElement(null);
+
+    /* ★ 2026-09-21 修 BUG：**中间那行观察日志也要擦掉**。
+       用户报的原话：「点击元素残留的文字会在文明阶段也显示」。
+
+       ⚠️ 根因：`.log` 是**文明前专属**的一条（`showToast` 只在
+          `!civUIOn` 时把字送到那儿），可它**没有任何东西在切阶段时收掉它** ——
+          和 `btnReset` 那次（决策 #133）是**同一个形状**：
+          "这条东西只属于某一个阶段，但没人告诉它在阶段切换时要退场"。
+       实测复现过：到文明那一刻 `#log` 里还挂着「世界开始冷却了」，
+          `show` 开着、还在视口里，而顶栏早换成文明的征兆了。
+
+       ⚠️⚠️ 这里和 CSS 是**一对，缺一不可，而且分工明确** ⚠️⚠️
+           · 这里（JS）清的是**状态** —— 文字、队列、定时器。
+             跟旁边那句 `selectElement(null)` 是同一件事。
+           · `style.css` 的 `body.civ-on .log { display: none }` 管的是
+             **不再显示**。
+          两边都做，理由和"元素栏"一模一样：
+             `setCivUI` 里清 `selectedEl`（状态）+
+             CSS 里 `body.civ-on .palette-panel{display:none}`（显示）。
+          ⚠️ 只做 CSS 那条也能"看着对"，但 DOM 里会留着一串假状态
+             （下一次 `showLog` 前它一直是"显示中"），那就是隐藏的雷。 */
+    if (on) clearLog();
+
     applyBodyClass();
   }
 
@@ -1242,7 +1420,18 @@
     if (!Elements.isInsideWorld(x, y)) return;   // 点在球外面
 
     var ev = Elements.drop(world, selectedEl, x, y);
-    if (ev && ev.text) showToast(ev.text);       // 雷种会返回一句天象提示
+    /* ★ 2026-09-21：现在**每个**元素都会返回一句投放旁白（`DROP_TEXT`）。
+       雷种还多一句 `also`（天象结果）—— 先飘哪句由 showLog 的队列保证。
+       ⚠️ 走 `showToast` 而不是直接 `showLog`：分流在 showToast 里
+          （文明前 → 中间漂浮；文明阶段 → 顶栏）。投放本来就只发生在文明前，
+          但走同一个口子，以后改分流只改一处。 */
+    /* ★ 2026-09-21 配色规则（用户定的）：
+         · 投放旁白 → **那个元素的颜色**（"你做了什么"）
+         · 世界自己的事（阶段推进 / 卡住 / 天象）→ **冷灰白**（"世界在发生什么"）
+       ⚠️ `ev.color` 只给 `text` 那句。`also` 是**天象结果** ——
+          那是世界在发生什么，所以**不传颜色**、走默认灰白。 */
+    if (ev && ev.text) showToast(ev.text, ev.color);
+    if (ev && ev.also) showToast(ev.also);
   }
 
   // 点画布 = 投放元素。
@@ -1306,7 +1495,7 @@
    *    为什么不显示全局值：玩家投一个水珠，就该看到水的数字真的涨了一点。
    *    投了没反应会让人以为没生效。
    *
-   * 和滑杆一样，"值没变就不碰 DOM" —— 这函数每帧都跑。
+   * 和别处的读数一样，"值没变就不碰 DOM" —— 这函数每帧都跑。
    */
   function syncReadout() {
     if (!world) return;
@@ -1553,13 +1742,143 @@
     btnEvolve.textContent = label;
   }
 
-  /** 顶部弹一条阶段提示（演化阶段会用到，现在先备好） */
-  function showToast(text) {
+  /** 中间那条观察日志 ★ 2026-09-21
+      文明**之前**那两分钟（混沌→冷却→海洋→大陆→生态）的旁白飘在这儿 ——
+      阶段推进、卡住、投放反馈都走它。
+
+      ⚠️ 节奏：淡入 0.6 秒 / 停留 3.2 秒 / 淡出 0.8 秒。
+         三个数字住在**两个地方**，改一个必须改另一个：
+           · 淡入 0.6 / 淡出 0.8 → style.css 的 `.log`（`.show` 里覆盖成 0.6）
+           · 停留 3.2            → 下面那个 `LOG_HOLD`（= 600 + 3200）
+      ⚠️ 为什么停留 3.2 秒（比顶栏那条的 2.6 久）：中文小字一行二十来个字，
+         2 秒读不完 —— 低头看一眼星球就错过了。 */
+  /* ── 队列：一条一条飘，不是直接替换 ──
+     ⚠️ 为什么要队列：雷种一次要飘**两条**（"投了什么" + "降下了什么"）。
+        直接替换的话第一条会被第二条当场顶掉，等于没飘。
+     ⚠️ 上限 **2** 条待播：玩家连点几下就会堆起来，堆到第五条时
+        屏幕上的字早和他刚才做的事对不上了。满了**丢最旧的**、留最新的 ——
+        刚发生的事比早先那条值得说。 */
+  var logQueue = [];
+  var logTimer = null;
+  /* ★ 2026-09-22：「开始下一轮」那条提示是**常驻**的（`sticky`）。
+     它挂着的时候 `logPinned` 为 true —— 后面的普通日志**一律丢掉**，
+     不抢它的位置。谁挂上去、谁收掉，见 `showToast` 第三参和 `clearLog`。 */
+  var logPinned = false;
+  var LOG_HOLD = 3800;    // 一条飘多久 = 淡入 0.6 秒 + 停留 3.2 秒
+  var LOG_FADE = 800;     // 淡出时长，⚠️ 必须和 style.css 里 `.log` 的 transition 对上
+
+  function showLog(text, color, sticky) {
     if (!text) return;
+
+    /* ── ★ 常驻那一条：不走队列、不排定时器，直接把字钉在屏幕上 ──
+
+       ⚠️ 只有「没走到文明」的结局会走到这儿 —— 那时顶栏是收起来的
+          （height:0），写进去等于写进看不见的地方。分流在 `showToast`。
+       ⚠️ 它要**当场顶掉正在飘的那条**：这是留给玩家的最后一句提示，
+          让一条投放旁白排在前头没有意义。
+       ⚠️ 收掉它的只有 `clearLog()`（【重置】和【换一个星球】都会调）。 */
+    if (sticky) {
+      logQueue.length = 0;
+      if (logTimer !== null) { clearTimeout(logTimer); logTimer = null; }
+      logPinned = true;
+      elLog.textContent = text;
+      elLog.style.color = color || '';
+      elLog.classList.add('show');
+      return;
+    }
+    if (logPinned) return;      // 常驻那条还挂着 —— 不抢（世界已经结束了）
+
+    /* ⚠️ 队列里存的是**对象**不是字符串 —— 因为**颜色是某一条的属性**，
+       不是整个容器的。开场那句是冷蓝、投放旁白跟着元素走、自然演化是灰白。 */
+    logQueue.push({ t: text, c: color || null });
+    while (logQueue.length > 2) logQueue.shift();
+    if (logTimer === null) pumpLog();     // 已经有条在飘就让它飘完，别打断
+  }
+
+  function pumpLog() {
+    if (!logQueue.length) { logTimer = null; return; }
+    var item = logQueue.shift();
+    elLog.textContent = item.t;
+    /* ★ 2026-09-21：颜色按条给。
+         不给（`null`）就清成空串 → 落回 style.css 的默认**冷灰白**，
+         那是"世界在发生什么"（阶段推进 / 卡住 / 天象）。
+         给了就用它 —— 投放旁白传的是**那个元素的颜色**。
+       ⚠️ 每条都要**重新设一遍**，不然上一条的颜色会留在下一条身上。 */
+    elLog.style.color = item.c || '';
+    elLog.classList.add('show');
+    logTimer = setTimeout(function () {
+      elLog.classList.remove('show');
+      /* ⚠️ 等淡出走完再上下一条，不然两条会叠在一起糊成一团 */
+      logTimer = setTimeout(pumpLog, LOG_FADE);
+    }, LOG_HOLD);
+  }
+
+  /** 把正在飘的那条日志**当场清干净**。
+   *
+   *  ★ 2026-09-21 加，修用户报的 BUG：
+   *    「点击元素显示文字在屏幕上，但是这时候点重置回到开始画面，
+   *      文字仍在屏幕上」
+   *
+   *  ⚠️ 根因：`btnReset` 里关了结局面板、岔路口、文明诞生面板，
+   *     **唯独漏了这条观察日志** —— 它是 2026-09-21 才加进来的新东西，
+   *     而那个"重置时该关哪些"的清单是照着当时已有的面板手写的。
+   *     于是重置之后：`.stage` 回到设置模式照样显示着，而 `.log`
+   *     还挂着 `show` 类、`textContent` 还是上一条 —— 字就留在屏幕上了。
+   *
+   *  ⚠️⚠️ 三件事缺一不可 ⚠️⚠️
+   *     ① `logQueue` 清空 —— 不清的话队列里排着的那条会接着往上冒
+   *     ② `logTimer` 清掉 —— 不清的话**下一次 showLog 会被吞掉**：
+   *        `showLog` 里有 `if (logTimer === null) pumpLog()`，
+   *        定时器还挂着时新日志只入队不播，得等旧的那个 4.6 秒走完
+   *     ③ `show` 类摘掉 + 文字清空 —— 不然屏幕上就留着那一行字
+   *     ④ `logPinned` 放掉（★ 2026-09-22 加的）—— 见下面那行
+   *
+   *  ⚠️ `logTimer` 这一个变量**同时**存着外层和里层两个定时器
+   *     （`pumpLog` 里的赋值会覆盖它），所以 `clearTimeout(logTimer)`
+   *     一次就把当前挂着的那个清掉了，不用分开存。 */
+  function clearLog() {
+    logQueue.length = 0;
+    logPinned = false;        // ★ ④ 常驻那条也一起摘掉（不清的话新日志全被它吃掉）
+    if (logTimer !== null) { clearTimeout(logTimer); logTimer = null; }
+    elLog.classList.remove('show');
+    elLog.textContent = '';
+    elLog.style.color = '';   // 颜色是按条内联设的，上一条的颜色别留给下一条
+  }
+
+  /** 把顶栏那条提示清掉。
+   *  ⚠️ 和 `clearLog` 是**同一个 BUG 的另外半边**：`showToast` 里那个
+   *     2.6 秒的定时器同样没人清，重置后顶栏的字也会留着。
+   *     用户只报了观察日志那个，这是顺手把同一类问题一次修干净。 */
+  function clearToast() {
+    clearTimeout(showToast._t);
+    showToast._t = null;
+    elToast.classList.remove('show');
+    elToast.textContent = '';
+  }
+
+  /** 顶栏那条提示。
+      ⚠️ 2026-09-21 起它**只管文明阶段及以后**（征兆、卡住、档案库消息…）——
+         文明前的字改走中间那条 `showLog`，分流见下。
+      ⚠️ 原来这里的注释写着「现在先备好」，那是 2026-09-14 留下的老话；
+         它其实早就在用了（征兆 / 卡住 / 雷种 / 档案库）—— 2026-09-21 顺手改掉。 */
+  function showToast(text, color, sticky) {
+    if (!text) return;
+
+    /* ★★ 分流点 ★★
+       ⚠️⚠️ 这个条件必须和 style.css 里 `body.mode-watch:not(.civ-on) .toast`
+             那条**逐字对应**：那边是 CSS 在收顶栏的位置，这边是 JS 在选走哪条路。
+             两把尺子对不上，就会出现"字写进了看不见的地方"（这个项目栽过）。
+       ⚠️ 文明阶段（`civUIOn`）**一个字都不动** —— 征兆照旧从顶上弹。
+       ⚠️ `sticky` 要**跟着转给 showLog** —— 不然"没走到文明"的结局上，
+          那条常驻提示会变成飘 3.8 秒就没。 */
+    if (mode === 'watch' && !civUIOn) { showLog(text, color, sticky); return; }
+
     elToast.textContent = text;
     elToast.classList.add('show');
     clearTimeout(showToast._t);
-    showToast._t = setTimeout(function () {
+    /* ★ 第三参 `sticky` = 常驻：**不排那个 2.6 秒的定时器**，字一直留着。
+       收掉它的是 `clearToast()`（【重置】和【换一个星球】都会调）。 */
+    showToast._t = sticky ? null : setTimeout(function () {
       elToast.classList.remove('show');
     }, 2600);
   }
@@ -1719,8 +2038,27 @@
     var dSim = dt * world.timeScale;   // 世界时间 = 真实时间 × 时间流速
     time += dSim;
 
-    update(dSim);
-    draw();
+    /* ⚠️⚠️ 这层 try/catch 是**保命的**，不是拿来掩盖错误的 ⚠️⚠️
+       `requestAnimationFrame` 是"回调里排下一帧"。回调里一旦抛异常，
+       下一帧就**再也排不上** —— 画面定住不动，而且**一声不响**。
+       玩家看到的是"卡死了"，其实是崩了；这是这个游戏最坏的失败模样。
+
+       ⚠️ `catch` 里**必须**再排一次下一帧（就靠下面那句兜着）——
+          不排的话这层 try/catch 等于没写，照样死。
+       ⚠️ 只 `console.error` **一次**：每帧都抛的话控制台会被刷爆，
+          而刷爆本身更卡。第一行足够定位问题。
+       ⚠️ 这是**全项目唯一一处 `console`**（平台不禁它，见
+          `_check-package.js` 的禁用清单）。加它是因为
+          "静默失败"在这个项目里被反复证明是最难查的一类。 */
+    try {
+      update(dSim);
+      draw();
+    } catch (err) {
+      if (!frameErrored) {
+        frameErrored = true;
+        console.error('[观测者] 主循环这一帧出错了，画面可能停住：', err);
+      }
+    }
 
     requestAnimationFrame(frame);
   }
@@ -1740,6 +2078,13 @@
     hideNaming();        // 双保险：弹窗万一还开着，也一起关掉
     hideChoice();
     hideCivBirth();
+    hideGuide();         // ★ 2026-09-21：指南同理
+    /* ★ 顺手把字也擦了 —— 换了一颗星球，屏幕上却还飘着**上一颗**的旁白
+       （"一团微火落入地表"之类），比留在原地更离谱。
+       ⚠️ 这里守着和 btnReset 同一件事，所以 `_wiring_test.js` 里那条断言
+          是**两个按钮一起查**的 —— 只修一个的话另一个照样漏。 */
+    clearLog();
+    clearToast();
     syncButtons();
   });
 
@@ -1913,6 +2258,12 @@
     }
 
     list.forEach(function (en, idx) {
+      /* ⚠️ 坏条目**直接跳过**：localStorage 里万一混进一条 null
+         （旧版本存的、被外面改过的），下面 `en.thumb` 就会抛异常 ——
+         而这一抛，**整个档案库都打不开**（不是"少一条"，是全没了）。
+         概率极低，但兜底只要一行。 */
+      if (!en) return;
+
       var row = document.createElement('div');
       row.className = 'arch-item';
 
@@ -1984,6 +2335,10 @@
   function openArchiveAt(idx) {
     var list = archiveLoad();
     if (idx < 0 || idx >= list.length) return;
+    /* ⚠️ 和 `renderArchive` 里那条同源：坏条目（null）不能喂给 `showRecord` ——
+       它里面会直接读 `w.ending`，抛出去的表现是「**点了没反应**」，
+       最难查的那种。给一句 toast，至少玩家知道发生了什么。 */
+    if (!list[idx]) { showToast('这条档案读不出来了'); return; }
     showRecord(list[idx]);
   }
 
@@ -2225,7 +2580,13 @@
     endArchived = true;
     btnEndArchive.textContent = '已存入 ✓';
 
-    showToast('已存入观察记录 · 底部可以打开');
+    /* ⚠️ 这里**不发提示** —— "开始下一轮"那条由 `showEnding()` 在**结局弹出的
+       那一刻**就挂上去了，而且常驻。在这儿再发一次只会把它重置一遍。
+       这一颗的反馈就是按钮自己变成「已存入 ✓」（见上面那段）。
+       ⚠️⚠️ 而且这条提示**不能**指向【观察记录】：那颗按钮带 `setup-only`，
+           **观察模式里根本不显示**（用户 2026-09-14 定稿的，见 index.html
+           底部按钮排那段）—— 结局这一屏正是观察模式，底部只有【暂停/继续】
+           和【重置】。提示只能指向真在屏幕上的那颗，否则玩家照着找，找不到。 */
   });
 
   // ── 【继续观察】关掉「文明诞生」面板 ──
@@ -2270,8 +2631,23 @@
   function startEvolution() {
     hideNaming();
     setMode('watch');            // 切过去之后本源那一节就藏起来了 —— 数值看不了也改不了
-    world.running = true;
     lastStuckText = null;        // 重新开始时，卡住的提示可以再弹一次
+
+    /* ★ 2026-09-21：开局先弹**观测指南**，玩家点【确认接入】世界才跑。
+
+       ⚠️⚠️ 顺序：先 `world.running = false`，再决定弹不弹 ⚠️⚠️
+          主循环的闸门是 `var frozen = !world.running`（见 frame()）。
+          不显式置 false 的话：玩家点过【重置】再点【开始演化】时
+          `world.running` 还是上一局的 true —— 指南还开着，世界里已经在涨潮了。
+
+       ⚠️ 点过【略过指南，不再提示】的，直接开跑（`guideSkipped()` 去查 localStorage）。
+          所以下面这两行**必须成对**：要么弹指南、要么把 running 打开，
+          漏了 else 那半边就是"指南不弹了，世界也永远不动"——
+          界面不报错，玩家只看到一颗死掉的星球。 */
+    world.running = false;
+    if (guideSkipped()) world.running = true;
+    else                showGuide();
+
     syncButtons();
   }
 
@@ -2323,6 +2699,14 @@
   // 【返回】—— 不开始了，退回设置模式继续调参
   btnNameBack.addEventListener('click', hideNaming);
 
+  /* ── 观测指南的两颗按钮（★ 2026-09-21）──
+     ⚠️ 两颗都是"关掉指南并开跑"，差别只有一个：右边那颗**顺手把指南永久关掉**。
+        所以走同一个 `closeGuide(skipAll)`，不要各写一遍 ——
+        各写一遍的话，"开跑要做的那几件事"（running / lastStuckText /
+        syncButtons）就有两份，迟早只改一处。 */
+  btnGuideGo.addEventListener('click',   function () { closeGuide(false); });
+  btnGuideSkip.addEventListener('click', function () { closeGuide(true);  });
+
   // 在输入框里按回车 = 点【开始演化】
   //（没有 <form>，所以不存在"表单提交跳转"，纯键盘便利）
   elNameIn.addEventListener('keydown', function (e) {
@@ -2366,6 +2750,15 @@
     hideEnding();                    // 关掉结局面板（如果还开着）
     hideChoice();                    // 岔路口选择框也一样
     hideCivBirth();                  // 文明诞生面板也一样
+    hideGuide();                     // ★ 2026-09-21：指南也一样（它接在命名后面弹）
+    /* ★ 2026-09-21 修 BUG：把屏幕上的字也清掉。
+       ⚠️⚠️ 上面那三行是"关面板"，这两行是"擦字"—— **两类事，别混**。
+          观察日志和顶栏那条提示都不是浮层（一个浮在 .stage 里、
+          一个就在顶栏上），`hideXxx()` 那套对它们不适用。
+          用户报的就是这个：点完元素屏幕上飘着字，一按【重置】，
+          字还留在那儿 —— 因为**从来没人清过它**。 */
+    clearLog();
+    clearToast();
     setMode('setup');
     refreshInfo();
     syncButtons();

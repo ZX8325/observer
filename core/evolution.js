@@ -58,6 +58,41 @@
 
   var CIV_STAGE = STAGES.length - 1;   // 最后一关的下标
 
+  /* ── 观测指南 ★ 2026-09-21 ─────────────────────────────────────
+     起完名字、还没开跑那一刻弹的整屏浮层 —— 几句话讲清这游戏怎么玩。
+
+     ⚠️⚠️ 它**替换掉了**原来那条开场提示（`INTRO_HINT`，同一天删的）⚠️⚠️
+        那条是"点【开始演化】之后在观察日志里飘一句"。用户改成弹框，
+        理由：飘一句一闪就没了（淡入 .6 + 停留 3.2 秒），玩家低头看星球
+        就错过；而这几句是**规则**，错过就没有第二次。
+
+     ⚠️⚠️ `lead` 和 `lines` 是**两段，不是一回事** ⚠️⚠️
+        · `lead`「你已经接入此界」—— **没有句号**。用户 2026-09-21 特意
+          交代过（原话「把你已接入此界后面的句号删了」）：它是个**宣告**，
+          不是一句话，句号会让它读起来像在陈述一件已经过去的事。
+        · `lines` 三条 —— **每条都有句号**，它们是一句一句的说明。
+
+     ⚠️ 三行**故意不带序号** —— 序号由 style.css 的 `.guide-line::before`
+        计数器画出来（看着是 `1. 2. 3.`，但那几个数字**不在文案里**）。
+        为什么不写进字符串：项目有一条老规矩是**全篇不用阿拉伯数字**
+        （`_style_test.js` 会扫），而这三行的序号又确实是数字。让样式画，
+        两边就不用打架。改这里之前先看 `.guide-line` 那条注释。
+
+     ⚠️ 它住在 core 里（而不是 app.js 或 index.html）是**为了让
+        `_style_test.js` 扫得到** —— 界面上的句子在 HTML 里就是文风盲区，
+        改成一句口语不会有任何测试红。这个坑本项目踩过四次。
+
+     ⚠️ 2026-09-21 还删过一行 `foot: '一局四分钟'`（用户原话
+        「把一局四分钟删了」）—— 别照旧版本加回来。 */
+  var GUIDE = {
+    lead: '你已经接入此界',
+    lines: [
+      '等待世界的演化，或投放元素。',
+      '见证文明的诞生，见证历史被写下。',
+      '做出你的选择。'
+    ]
+  };
+
   /* ── ★ 界外投放（2026-09-14）────────────────────────────────────
      「界外之物」在文明诞生之前投下种子的一次掷骰。
 
@@ -462,7 +497,22 @@
     ascend:  { key: 'ascend',  name: '飞升前兆',   dur: 20, desc: '光点开始离开地面' },
     doom:    { key: 'doom',    name: '寂灭前兆',   dur: 16, desc: '光点一个接一个熄灭' },
     split:   { key: 'split',   name: '分裂前兆',   dur: 19, desc: '光点分成几团，互相远离' },
-    watched: { key: 'watched', name: '被观测前兆', dur: 18, desc: '所有光点同时转向，朝向观察者' },
+    /* ⚠️ 2026-09-22：**「观察者」→「观测者」**（一处用词统一）
+       ⚠️ 玩家可见的文案里用到这个词的一共 **4 处**
+          （2026-09-22 质检重新数的 —— 原来这里写"只有两处"，是**数漏了**）：
+            splash.js:48             「欢迎回来，**观测者**。」
+            本条（`OMENS.watched`）    「所有光点同时转向，朝向**观测者**」
+            `FATES.watched.desc`      「…**观测者**至今没有回应」
+            `FATES.arrive.desc`       「…回应来自**观测者**」
+          ⚠️ 漏掉的正是**两张结局卡上那两句** —— 而那是最显眼的地方。
+          ⚠️ **手数的数会烂。** 要重新数，跑这一行，**再看哪些不是注释**：
+              grep -rn "观测者" core/ending.js core/evolution.js splash.js
+              （注释行以 `*` 或 `//` 开头，跳过它们）
+          另外**游戏名**（`index.html` 的 `<title>`）也是「观测者」。
+          两个词指同一个东西，玩家会以为不一样 —— 统一到「观测者」。
+       ⚠️ 代码注释里的「观察者」**一个字没动**（它们不上屏，
+          而且已经写了几百处，改了只是噪音）。 */
+    watched: { key: 'watched', name: '被观测前兆', dur: 18, desc: '所有光点同时转向，朝向观测者' },
     merge:   { key: 'merge',   name: '融合前兆',   dur: 17, desc: '几团光点缓缓靠拢，合成一处' },
     cycle:   { key: 'cycle',   name: '轮回前兆',   dur: 17, desc: '光点逐渐黯淡，又退回原点' },
     rift:    { key: 'rift',    name: '破碎前兆',   dur: 15, desc: '地表裂开，光点四散' },
@@ -475,6 +525,16 @@
           灭掉的和还在动的**同时存在**，这才是这条命运的意思。
           写成"光点熄灭"就分不出来了。 */
     machine: { key: 'machine', name: '遗落前兆',   dur: 18, desc: '代表他们的光点逐个熄灭，而他们造的东西还在动' },
+    /* ★ 同行 —— **两拨先分开、最后合到一处**（2026-09-22）。
+       ⚠️ 画法和「遗落」共用同一套索引（按下标一分为二），但讲的是**一段弧线**：
+            前半段 两拨越离越远（冲突），后半段重新合到一处（走到一起），
+            起点和终点都在原位 —— 终点那一处正是「两边还是走到了一处」。
+       ⚠️ 「一个也不灭」是它和遗落唯一的区别：
+          两组都灭是寂灭，一组灭一组动是遗落，都不灭才是同行。
+       ⚠️ 2026-09-22 之前这句写的是「一个也没灭」，只说了"没人死"，
+          没说"打过一场" —— 用户看到结局那句里的「冲突持续了几代人」
+          之后要求改的。详见 `render/renderer.js` 的 coexist 分支。 */
+    coexist: { key: 'coexist', name: '同行前兆',   dur: 18, desc: '光点分成两拨，先分开，僵了一阵，最后合到一处，一个也没灭' },
 
     /* ═══════════════════════════════════════════════════════════
        ★★ 2026-09-13：跟着命运一起加的 7 条（10 → 17）★★
@@ -498,10 +558,26 @@
     blaze:   { key: 'blaze',    name: '燎原前兆', dur: 17, desc: '光点相互靠拢，然后一同暗下' },
     recede:  { key: 'recede',   name: '退潮前兆', dur: 18, desc: '光点向一处收拢，越收越小' },
     disperse:{ key: 'disperse', name: '星散前兆', dur: 19, desc: '光点各自离开，越散越远' },
-    arrive:  { key: 'arrive',   name: '抵达前兆', dur: 20, desc: '信号发出之后，有回应从外面回来' },
+    /* ⚠️ 2026-09-22：和 `FATES.arrive.desc` 一起改的（那一条有完整说明）——
+       原来是「有回应从**外面**回来」，而「外面」和「记录之外」一样两可
+       （观测者在外，界外之物也在外）。改成「**他们朝着的那个方向**」：
+       那个方向就是信号打过去的方向，而站在那里的只有观测者。 */
+    arrive:  { key: 'arrive',   name: '抵达前兆', dur: 20, desc: '信号发出之后，有回应从他们朝着的那个方向回来' },
     stillness:{key: 'stillness',name: '静滞前兆', dur: 18, desc: '所有光点停在原处，一直亮着' },
     symbiose:{ key: 'symbiose', name: '共生前兆', dur: 19, desc: '光点沉进地表，和绿色混成一片' },
     cultivate:{key: 'cultivate',name: '培育前兆', dur: 20, desc: '光点连成网，铺满整片大陆' },
+
+    /* ═══ ★★ 仰止 —— 信仰专属结局（2026-09-22）★★ ═══
+       ⚠️ 这一条的画面**要和两条最容易撞的分开**：
+         · 被观测（watched）「所有光点同时转向，朝向观测者」
+             —— 它也在转向。差别是**那条转完还在发信号（往外动）**，
+                这一条转完**定住**，而且**光点之间变得没有区别**。
+         · 静滞（stillness）「所有光点停在原处，一直亮着」
+             —— 它也是停住。差别是**那条各点保持原样、整体越来越淡**，
+                这一条是**大小和亮度收成同一个值**（统一），而且不淡。
+       ★ 一句话：「被观测」是**还没找到**，「仰止」是**找到了，然后停在那里**。 */
+    revere:  { key: 'revere',   name: '仰止前兆', dur: 18,
+               desc: '所有光点转向同一处，然后定住；大小和亮度变得完全一样' },
 
     /* ★ 2026-09-14：界外入侵 —— 界外之物那条线的批 2（见 ending.js 的
        FATES.harvest 和 civEvents.js 的 `outsider` 大事件）。
@@ -574,6 +650,26 @@
      这里只有一个上限。 */
   var PRESSURE_MAX  = 100;
 
+  /* ★ 2026-09-22：**结局被事件链钉死**之后，预兆只放这么久（秒）。
+
+     用户的三条要求：「达成触发条件后直接进入结局」「这种类型的不需要预兆了」
+     「或者符合条件后，等五秒这段时间放预兆，然后这五秒不刷任何事件了」。
+     选的是第二条（保留预兆、缩短），5 秒是量出来的：
+
+         顶栏提示      2.6 秒
+         中间旁白      3.8 秒
+         ★ 这条        5 秒   ← 比上面两个都长，玩家一定看得见
+         正常预兆     15~20 秒 ← 5 秒是它的三分之一
+
+     ⚠️ **不能去改 `OMENS[key].dur`** —— 那个数被 `_civEvents_test.js` 钉在
+        15~20 之间，而且同一张预兆表**也供"自然走到这个结局"的世界用**
+        （静滞、轮回、寂灭都有自然路径）。缩短只该发生在"被锁"这一种情况。
+     ⚠️ 动画是按 `c.progress`（0→1）画的，缩短时长 = **把同一段动画快放**。
+        嫌赶就改这一个数。
+     ⚠️ 「这五秒不刷任何事件」是**白拿的** —— 预兆期（phase 2）本来就只做
+        "把进度推到 1"这一件事，不产生任何事件。不用写额外代码。 */
+  var LOCK_OMEN_SEC = 5;
+
   /**
    * 这个文明的编年史该排多长（世界秒）。
    *
@@ -583,12 +679,6 @@
   function chronicleDuration(world) {
     var proto = (world.civ && world.civ.proto) || null;
     return CivLore.chronicleTime(proto);
-  }
-
-  /* 兼容旧名字：外面（测试、app）可能还在叫 developDuration。
-     现在时长由**物种**决定，不再是生态和性格。 */
-  function developDuration(world) {
-    return chronicleDuration(world);
   }
 
   /** 建起文明子时间线（掷完文明那一刻调用，时间还停在 0）*/
@@ -632,10 +722,32 @@
 
     /* 这颗世界长出的是什么形态 / 什么性格 ——
        用来筛「形态专属」「性格专属」的小事件（见 CivEvents.fits）。
-       ⚠️ 到这一步它们**已经定下来了**（Civ.roll 在文明诞生前就掷完了）。 */
+       ⚠️ 到这一步它们**已经定下来了**（Civ.roll 在文明诞生前就掷完了）。
+
+       ★ 2026-09-21 加了两个字段 —— 大事件的**第一道门槛**要用
+         （见 `CivEvents` 的 `gateOf`，那里有完整设计说明）：
+
+           mil      军事值
+           seedNum  门槛骰子的种子
+
+       ⚠️ 为什么 `mil` 要在这里取好、而不是让 civEvents 自己去拿：
+          **civEvents 不依赖 civ.js** —— 见那边 `invaded` 那段的理由
+          （"少一次 DEPS 表的同步风险"）。所以走 `Civ.attrOf` 取好再传过去。
+          ⚠️ `attrOf` 是四属性的**唯一入口**（不是直接摸 `civ.attr`）——
+             它会顺手补写老存档缺的那个字段，还把下限夹一遍。
+             这里调它**没有副作用**：attr 只由 proto + temper 决定，
+             早调晚调算出来是同一份。
+
+       ⚠️ 为什么 `seedNum` 要传进去、而不是让门槛骰子借 `bigRng`：
+          借了的话，**"这颗世界军事高不高"会改变"这一局抽到哪几个大事件"**——
+          两个本来无关的系统就绑在一起了，以后想调其中任何一个都动不了。
+          这坑本项目在 `evRng` / `pickRng` / `lineRng` 上各栽过一次
+          （见上面那两段）。 */
     var ctx = {
-      form:   (world.civ && world.civ.form)   || null,
-      temper: (world.civ && world.civ.temper) || null
+      form:    (world.civ && world.civ.form)   || null,
+      temper:  (world.civ && world.civ.temper) || null,
+      mil:     (world.civ && Civ.attrOf(world.civ).mil) || 0,
+      seedNum: world.seedNum
     };
 
     /* ── ⚠️ 顺序：**事件先排，编年史后排** ──
@@ -752,6 +864,12 @@
       omenBand: 0,         // 已经用掉几档征兆（见 CivLore.OMEN_BANDS）
       omenRng: rng,        // 征兆措辞用的随机源（和上面的 rng 同一条）
 
+      /* ★ 2026-09-23：倒计时的**期限**，和它有没有兑现。
+         `doomAt` 只在**倒计时那一行真的落进编年史**时才记（见 stepCiv ②）；
+         `doomKept` 是"已经推过「撑住了」"，保证一行只推一次。 */
+      doomAt: null,        // 崩点进度（CivLore.doomProgress）—— 预言说到这儿为止
+      doomKept: false,
+
       /* ── ★ 两种事件，两条完全不同的路 ──
          小事件（smalls）：文明自己的事。**当场了结，不停世界**。
          大事件（bigs）  ：观察者的事。**冻结世界等玩家出手**。
@@ -759,6 +877,7 @@
       smalls: slots,       // [{key, at}]，按时间排好
       smallIdx: 0,
       bigs: bigs,
+      bigFired: {},   // ★ 2026-09-22：这一局已经出过的大事件 key
       bigIdx: 0,
       bigPending: null,    // ★ 正开着的大事件 key —— 只有它会冻世界
 
@@ -1073,6 +1192,17 @@
        （和 civEvents.apply 第 ③ 段是同一条规矩）。 */
     c.shift[V.helpAxis] = (c.shift[V.helpAxis] || 0) + V.helpPressure;
 
+    /* ★ 2026-09-23：**四属性也一起推**（用户拍板加的）。
+       `helpText` 写的是「此后{folk}手里的东西，有一部分不是自己造的」——
+       那是"本事变大了"，只减压说不通。值见 `VISIT.helpAttr`。
+
+       ⚠️ 走 `CivEvents.applyAttr`，**不在这里手写 `civ.attr`** ——
+          否则全项目就有四个写属性的地方（起点 / 事件推拉 / 文化自然增长 /
+          界外来访），以后再也数不清"什么会改这四个数"。见那个函数的说明。
+       ⚠️ 在这一支里属性只是"跟着来"的，所以不需要判空 ——
+          `applyAttr` 自己有守卫，世界没到文明时它会返回 false 而不是抛。 */
+    CivEvents.applyAttr(world, V.helpAttr);
+
     /* ⚠️ 行的形状照着 `resolveSmall` 推小事件的样子来 ——
        `event` 抬头（▸ 亮白加粗）+ 一行正文。
        **不能用 `act`**：那是"观察者出手"，冷白色，
@@ -1136,6 +1266,55 @@
         c.fate = Ending.fate(world, true);
         c.omen = OMENS[c.fate.key] || OMENS.harvest;
         c.omenTime = c.omen.dur;
+        return { type: 'omen', fate: c.fate, omen: c.omen, collapsed: false };
+      }
+
+      /* ══ ③″ ★★ 结局被事件链**钉死**了 → 当场收尾（2026-09-22）★★ ══
+
+         用户的原话：**「本来锁结局了，就不应该再进别的结局了」**。
+
+         起因：他报「信仰触发了仰止之后，又跳了几个大事件，过了一会才跳结局」。
+         旧行为是 —— 选了锁结局的选项只写了 `world.lockedFate`，
+         **流程那边根本没人读它**，于是编年史接着写、格子接着抽，
+         一直跑到时间轴末尾才报结局。①③⑦ 和 ⑧（信仰）四条都是这样。
+
+         ⚠️⚠️ 和上面「界外入侵」是**同一个形状**，理由也一模一样 ⚠️⚠️
+            玩家点的那一手就是这一局编年史的**最后一行** ——
+            记录断在他那一步之后，不再排历史行、不再放大事件。
+
+         ⚠️ 必须排在**征兆和事件之前**（所以紧跟在 invasion 后面）：
+            排在后面的话，同一帧里会出现
+            「玩家选了【抹除文明】」→「— 夜里的风比往年冷」——
+            他那一手之后还多了一行**别人的话**。
+            invasion 那段注释里记的是同一个坑（实测踩到过）。
+
+         ⚠️ 判据走 `Ending.lockedFate(world)`，**不在这里自己写一遍** ——
+            它内部拿 `fate()` 自检过，和最终报的结局永远一致。
+            「两把尺子量同一件事」这个坑本项目栽过好几次。
+            ⚠️ 代价是每帧多问一次 `lockedFate()`。**实测（2026-09-22 质检量的）**：
+               `fate()` 单次约 **0.16 微秒**，一局编年史约 6000 帧 ⇒ 约 **1 毫秒**；
+               而且绝大多数帧在"没写锁、券也没攒够"时**当场就返回了**，
+               压根轮不到 `fate()`。
+               ⚠️ 这里原来写的是"一局下来约几十毫秒"—— 夸大了约 50 倍，
+                  是拍脑袋写的，不是量的。换成实测数。
+               换来的是"只有一把尺子"，值。
+
+         ⚠️ `c.cutAt = c.time` **必须在 `c.time = 0` 之前记**：
+            「存活周期」和传记末尾的「共计 N 个周期」都读它
+            （见 CivLore.cyclesOf）。不记的话会拿编年史**全长**去报。
+
+         ⚠️ `omenTime` 用 `LOCK_OMEN_SEC`（5 秒），**不是** `c.omen.dur`（15~20）——
+            玩家刚点完选项，不用再吊那么久，但也不能什么都不演。
+            见那个常量的注释。 */
+      var lockKey = Ending.lockedFate(world);
+      if (lockKey) {
+        c.cutAt = c.time;
+        c.phase = 2;
+        c.time = 0;
+        c.progress = 0;
+        c.fate = Ending.fate(world, true);      // 自检保证 = lockKey
+        c.omen = OMENS[c.fate.key] || OMENS.cycle;
+        c.omenTime = LOCK_OMEN_SEC;
         return { type: 'omen', fate: c.fate, omen: c.omen, collapsed: false };
       }
 
@@ -1256,8 +1435,23 @@
       //    判据在 CivLore.willCollapse（见那里的说明）。
       var bands = CivLore.OMEN_BANDS;
       while (c.omenBand < bands.length && c.pressure >= bands[c.omenBand].at) {
+        var bnd = bands[c.omenBand];
         var txt = CivLore.omenText(c.omenRng, proto, c.omenBand, c);
-        if (txt) { pushRow(c, 'omen', txt); c.rowsUsed++; }
+        if (txt) {
+          pushRow(c, 'omen', txt);
+          c.rowsUsed++;
+          /* ★ 2026-09-23：这一条是**倒计时**吗？是的话把**期限**记下来 ——
+             等它过去而世界还在，就要推那一行「撑住了」（见下面 ③′）。
+
+             ⚠️ 判据是"**这一行真的落进编年史**了"，不是"那一刻 willCollapse 为真"：
+                倒计时是从池子里**抽**的（同一档还有别的句子），
+                没抽到就没有那句预言，也就不该有"没兑现"这一说。
+             ⚠️ `txt` 是**带 {left} 的原文**（替换在 pushRow 里做），
+                所以能直接和 `bnd.countdowns` 里的原文对上。 */
+          if (bnd.countdowns && bnd.countdowns.indexOf(txt) >= 0) {
+            c.doomAt = CivLore.doomProgress(c);
+          }
+        }
         c.omenBand++;
       }
 
@@ -1284,6 +1478,29 @@
         return { type: 'omen', fate: c.fate, omen: c.omen, collapsed: true };
       }
 
+      /* ══════════════════════════════════════════════════════════════
+         ★★ ③′ 倒计时的期限过去了，而它还在（2026-09-23）★★
+         ══════════════════════════════════════════════════════════════
+
+         上面那两句倒计时是**带期限**的预测：「将在**四十个周期内**耗尽」。
+         期限一到、世界还活着，那句预言就**板上钉钉地落空**了 ——
+         哪怕它后面照样崩，那句"四十个周期内"也已经错了。
+
+         ★ 所以这一步推的是**既成事实**，不是又一个预测：
+           不存在"说了撑住结果没撑住"那种反向打脸。
+
+         ⚠️⚠️ 必须排在 ③ 压垮判定**之后** ⚠️⚠️
+            同一帧里两件事都成立时，崩了就是崩了 ——
+            不能既说"撑住了"又说"没了"。（③ 会 return，所以排在它后面就够。）
+
+         ⚠️ 只推一次（`doomKept`）：期限只会被跨过一次。
+         ⚠️ `doomAt` 是 null 就什么都不做 —— 没印过倒计时就没有"没兑现"。 */
+      if (c.doomAt != null && !c.doomKept && c.progress >= c.doomAt) {
+        pushRow(c, 'omen', CivLore.KEEP_LINE);
+        c.rowsUsed++;
+        c.doomKept = true;
+      }
+
       /* ── ④ 大事件到点了？ ★★ 只有它会冻结世界 ★★ ──
          和岔路口一样：世界屏住呼吸，等玩家出手（见 step 的 frozen 判断，
          它认的是 `c.bigPending`）。
@@ -1306,13 +1523,40 @@
         if (slot.mode === 'help') {
           resolveVisitHelp(world);
         } else {
-          var bd = CivEvents.byKey(world, slot.key);
+          /* ★★ 2026-09-22：**不再从排期表里读事件，改成就地挑**（用户拍板）★★
+
+             ── 之前是什么样 ──
+             排期那一刻就把这一局的大事件抽好了，这里只负责"读出 key
+             + 复判属性门槛"，判不过就 `bd = null` —— **空掉，不补**。
+             实测 53.3% 的局因此一条大事件都没有。
+
+             ── 现在 ──
+             `pickBig` 现场扫一遍事件表：没出过的 + 性格够格 + 属性够格
+             → 够格的里面掷骰子挑一条。挑不出来才真的空着这一格。
+
+             ⚠️⚠️ 属性门槛从此**只判这一处** —— 原来这里那一遍复判
+                 （`gateAttrsOK`）已经并进 `pickBig` 了。
+                 **别再加回来**：两把尺子迟早会分叉，而分叉不报错。 */
+          /* 这一格演什么，分两种 ——
+
+             · `slot.key` **有值** → 界外来访（`planVisit` 排好的那一条）。
+               ⚠️⚠️ 它**绝对不能丢进 `pickBig`** ⚠️⚠️
+                  它不是"这一局够格的事件"，是"这颗星球被外面盯上了" ——
+                  只有被界外投放过的世界才排得上。而它自己**没有门槛**，
+                  丢进候选池的话所有世界都可能随机遇到它，
+                  那正好把 `planVisit` 存在的意义抹掉了。
+
+             · `slot.key` **没有值** → **现场挑**（排期只排了空位，见 `pickBig`） */
+          var bd = slot.key
+            ? CivEvents.byKey(world, slot.key)
+            : CivEvents.pickBig(c, Civ.attrOf(world.civ), world.civ,
+                                world.seedNum, c.bigIdx);
           if (bd) {
+            c.bigFired[bd.key] = true;
             c.bigPending = bd.key;
-            /* ★ 交给界面的是**填好占位符的副本** —— 见 fillDeep 上面那一段。
-               ⚠️ 这里返回的是副本，但 `c.bigPending` 存的是 **key**（不是对象），
-                  所以 resolveBigEvent 走的还是 `CivEvents.apply` 那张原表 ——
-                  两边的 key 一致，填过和没填过不影响任何逻辑。 */
+            /* ★ 交给界面的是**填好占位符的副本** —— 见 `fillDeep` 上面那一段。
+               ⚠️ `c.bigPending` 存的是 **key**（不是对象），所以
+                  `resolveBigEvent` 走的还是 `CivEvents.apply` 那张原表。 */
             return { type: 'bigEvent', event: fillDeep(bd, c), progress: c.progress };
           }
         }
@@ -1459,11 +1703,6 @@
      阶段推进条件
      ═══════════════════════════════════════════════════════════════ */
 
-  /**
-   * 判断当前阶段能不能进入下一阶段。
-   *
-   * @returns {string|null} 能过去 → null；过不去 → 一句人话说明为什么
-   */
   /**
    * 判断当前阶段能不能进入下一阶段。
    *
@@ -1860,7 +2099,6 @@
     world.evo.progress = 0;
     world.evo.layers = { ocean: 0, continent: 0, life: 0, civ: 0 };
     world.evo.rotation = 0;
-    world.simTime = 0;
     world.running = false;
     world.finished = false;
     world.ending = null;
@@ -1889,6 +2127,12 @@
     // 文明那条线的痕迹也一样
     delete world.civPressure;      // 编年史期间涨的压力
     delete world.civCollapsed;     // 是不是被压力压垮的
+    /* ★ 2026-09-21：观察者撒手（大事件 ③ 的【合上这一页】）——
+       ⚠️ 和 `civCollapsed` 一字之差，**不是同一个东西**：
+          `civCollapsed` = 被压力压垮（死活档，排在静滞**前面**）
+          `lockedFate`   = 观察者把结局定死了（四属性层之前截胡）
+          两个都要清 —— 漏一个的话，重跑这颗世界会沿用上一次的结局。 */
+    delete world.lockedFate;
 
     // 文明本身也要重新掷 —— 上次长出来的兽类还在 world.civ 里躺着，
     // 不清的话第二次跑会沿用它，等于"重置没有真的重来"。
@@ -1908,14 +2152,15 @@
     delete world.invaded;
   }
 
-  /** 阶段名，给界面用 */
-  function stageName(i) {
-    return STAGES[i] ? STAGES[i].name : '';
-  }
+  /* ⚠️ 2026-09-22 删掉了 `stageName(i)` —— 真死代码（全项目零调用，含测试）。
+     原注释写「阶段名，给界面用」，但界面**不是**走它：
+     `app.js` 直接读 `Evolution.STAGES[i].name`（见那边的阶段指示器）。
+     ⚠️ `STAGE_NAMES`（`ending.js` 里那张表）是**另一个东西**，还在用，别当成它。 */
 
   return {
     STAGES: STAGES,
     CIV_STAGE: CIV_STAGE,
+    GUIDE: GUIDE,             // ★ 2026-09-21：观测指南那几句（_style_test.js 扫它）
     DRIFT: DRIFT,
     LAYER_SPEED: LAYER_SPEED,
 
@@ -1939,9 +2184,8 @@
     resolveSmall: resolveSmall,        // ★ 文明自己定，当场了结（不停世界）
     resolveBigEvent: resolveBigEvent,  // ★ 观察者出手，等玩家点
     resolveVisitHelp: resolveVisitHelp,// ★ 界外之物帮忙 —— 不弹窗，直接落进编年史
-    developDuration: developDuration,
     reset: reset,
-    stageName: stageName,
+    /* ⚠️ 2026-09-22：`stageName` 导出删了（真死代码，见上面那段墓碑）。 */
     effectiveEssence: effectiveEssence,
     targetOcean: targetOcean,
     targetContinent: targetContinent,

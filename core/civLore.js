@@ -357,6 +357,23 @@
     ] }
   ];
 
+  /* ═══════════════════════════════════════════════════════════════
+     ★★ 倒计时**没兑现**那一行（2026-09-23）★★
+     ═══════════════════════════════════════════════════════════════
+
+     上面那两句倒计时是**带期限**的预测：「将在**四十个周期内**耗尽」。
+     期限一过、世界还活着，那句预言就**板上钉钉地落空了**，
+     而且谁也翻不了案 —— 哪怕它后面照样崩，那句"四十个周期内"也已经错了。
+
+     ★ 所以这一行是**陈述既成事实**，不是又一个预测 —— 它不会撒谎，
+       不存在"说了撑住结果没撑住"那种反向打脸。
+     ⚠️ 判据和时机在 `evolution.js` 的 stepCiv ③′（期限一到就推，只推一次）。
+
+     ⚠️ 「按当时算的」**故意**是回指 —— 而那个"当时"**一定有出处**：
+        这一行只在**倒计时那行真的落进编年史之后**才可能被推
+        （`c.doomAt` 就是那时记下来的）。所以它不是悬空的指代。 */
+  var KEEP_LINE = '{folk}撑住了。按当时算的，这个时候记录已经该停了。';
+
   /**
    * 这个文明**真的会被压力压垮**吗？
    *
@@ -459,7 +476,12 @@
   /** 这个文明撑到最后（progress = 1）会不会被压垮 */
   function willCollapse(c) {
     if (!c) return false;
-    return pressureOf(c, 1) >= 100;
+    /* ★ 2026-09-23：改成走 `doomProgress` —— **一把尺子**。
+       这两个条件本来是一回事（`pressureOf(c,1) >= 100` ⟺ 崩点进度 ≤ 1），
+       但分开写就是两处推导：以后谁动了压力公式只改一边，
+       "会不会崩"和"期限算到哪儿"就会悄悄分家 —— 而倒计时和「撑住了」
+       正好一边读一个。⚠️ 别改回 `pressureOf(c, 1) >= 100`。 */
+    return doomProgress(c) <= 1;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -2770,15 +2792,19 @@
    * ⚠️ 必须夹上下限：压力已经超过 100 时会算出负数，
    *    endure 极大（石类 1.25）时又会算出荒谬的大数。
    */
-  function cyclesLeft(c) {
-    if (!c) return 0;
+  function doomProgress(c) {
+    if (!c) return 1;
     /* 崩点进度：令**总压力**等于 100 解出 progress ——
          (100 / base) × p + total = 100   →   p = (100 − total) × base / 100
        ⚠️ 用的是总账（和 willCollapse / evolution.js 同一把尺子），
           不是"某一条线的崩点" —— 那两条在 2026-09-13 改成 B 方案
           之后已经不是一回事了。 */
-    var peak = (100 - sumShift(c)) * baseEndure(c) / 100;
-    var left = (peak - (c.progress || 0)) * cyclesOf(c);
+    return (100 - sumShift(c)) * baseEndure(c) / 100;
+  }
+
+  function cyclesLeft(c) {
+    if (!c) return 0;
+    var left = (doomProgress(c) - (c.progress || 0)) * cyclesOf(c);
     return Math.max(5, Math.min(999, Math.round(left)));
   }
 
@@ -3056,6 +3082,12 @@
     cycleAt: cycleAt,
     cyclesLeft: cyclesLeft,
     willCollapse: willCollapse,
+    /* ★ 2026-09-23：倒计时的**期限**（崩点进度，0~1 之外也可能）。
+       `cyclesLeft` 由它推出来 —— 一把尺子。`evolution.js` 拿它判
+       「期限过去了而世界还在」（见那里 ③′）。 */
+    doomProgress: doomProgress,
+    /* ★ 2026-09-23：倒计时没兑现那一行（见它上面的说明）。 */
+    KEEP_LINE: KEEP_LINE,
     fillPlaceholders: fillPlaceholders,
     cnNum: cnNum,
 

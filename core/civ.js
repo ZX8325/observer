@@ -963,14 +963,6 @@
   }
 
   /**
-   * 按权重从一组定义里抽一个，返回抽中的那条定义。
-   *
-   * @param {object} bias 可选的额外权重表 { key: 加多少 }。
-   *        目前只有「文明抉择」用它（见 choices.js）——
-   *        把玩家的选择翻译成"哪一类更容易被抽中"。
-   *        ⚠️ 是**加权**不是**指定**：权重再高也只是更容易，不是必然。
-   */
-  /**
    * 按权重抽一条。
    *
    * ⚠️ 原来这里还有第四个参数 `bias`（外部塞进来的额外权重）——
@@ -1027,19 +1019,22 @@
     return null;
   }
 
-  /**
-   * 这个物种在世界里的**族名**（兽类 → 兽群、海类 → 潮民）。
-   *
-   * 编年史一律用它当主语 —— 用户给的规范里第一条就是"主语必须明确"，
-   * 而「兽类」是分类名，读着像报告；「兽群」才是这个族群自己的叫法。
-   *
-   * ⚠️ 名字里的 `name`（兽类）仍然用在诞生面板和结局面板的「原型」那一行 ——
-   *    那里是分类信息，该用分类名。两套名字各管一处，别混。
-   */
-  function folkOf(key) {
-    return byKey(key).folk || byKey(key).name;
-  }
+  /* ⚠️ 2026-09-22 删掉了 `folkOf(key)` —— 真死代码（全项目零调用，含测试）。
+     它返回「族名」（兽类 → 兽群），原注释说"编年史一律用它当主语"，
+     但实际早就不走它了：**族名是 `PROTOS[].folk` 这个字段**，
+     由 `Civ.roll` 写进 `civ.folk`，编年史里走 `{folk}` 占位符、
+     由 `CivLore.fillPlaceholders` 替换。
 
+     ⚠️ 但它那条注释里有**一条还成立的规矩**，别跟着丢了 ——
+        **两个名字各管一处，别混**：
+
+          族名（`PROTOS[].folk`：兽群 / 潮民 / 林体）
+              → 编年史、事件、征兆里当**主语**。
+                用户规范第一条是"主语必须明确"，而族名才是这个族群
+                **自己的叫法**；分类名读着像报告。
+
+          分类名（`PROTOS[].name`：兽类 / 海类 / 植类）
+              → 诞生面板 / 结局面板的「原型」那一行，那是**分类信息**。 */
   function hasTrait(world, t) {
     return world.traits.indexOf(t) >= 0;
   }
@@ -1246,7 +1241,7 @@
     displayName: displayName,
     byKey: byKey,
     forcedProto: forcedProto,
-    folkOf: folkOf,
+    /* ⚠️ 2026-09-22：`folkOf` 导出删了（真死代码，见上面那段墓碑）。 */
     formOf: function (key) { return findIn(FORMS, key); },
     temperOf: function (key) { return findIn(TEMPERS, key); },
     weightsFor: weightsFor
